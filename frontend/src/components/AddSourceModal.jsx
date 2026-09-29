@@ -70,6 +70,15 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
     }
   }
 
+  async function handleRemoveSuggestedTag(tagId) {
+    try {
+      await api.removeTag(createdSourceId, tagId);
+      setAnalysis((a) => ({ ...a, suggested_tags: a.suggested_tags.filter((t) => t.id !== tagId) }));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleFinish() {
     await onCreated();
   }
@@ -86,8 +95,16 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
                 <h4>תגיות שה-AI הציע</h4>
                 <div className="tags-row">
                   {analysis.suggested_tags.map((t) => (
-                    <span key={t} className="tag-chip tag-chip-ai">
-                      #{t}
+                    <span key={t.id} className="tag-chip tag-chip-ai">
+                      #{t.name}
+                      <button
+                        type="button"
+                        className="tag-remove"
+                        title="הסר תגית"
+                        onClick={() => handleRemoveSuggestedTag(t.id)}
+                      >
+                        ×
+                      </button>
                     </span>
                   ))}
                 </div>

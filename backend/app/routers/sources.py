@@ -264,8 +264,11 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(source)
 
+    suggested_names = {t.strip() for t in suggested_tags}
     return {
-        "suggested_tags": suggested_tags,
+        "suggested_tags": [
+            t for t in source_to_out(source)["tags"] if t["origin"] == "ai" and t["name"] in suggested_names
+        ],
         "insights": [
             {
                 "id": i.id,

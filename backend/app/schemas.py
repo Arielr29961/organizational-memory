@@ -99,7 +99,7 @@ class ConnectionOut(BaseModel):
 
 
 class AnalyzeResult(BaseModel):
-    suggested_tags: List[str] = []
+    suggested_tags: List[TagOut] = []
     insights: List[InsightOut] = []
     connections: List[ConnectionOut] = []
 
