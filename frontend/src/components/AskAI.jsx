@@ -19,6 +19,7 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
   const [chats, setChats] = useState([]);
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
+  const [attachment, setAttachment] = useState(null);
   const [asking, setAsking] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [error, setError] = useState("");
@@ -73,10 +74,15 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
     if (!finalQuestion || asking) return;
     setAsking(true);
     setError("");
+    const file = attachment;
     setQuestion("");
-    setMessages((m) => [...m, { id: `pending-${Date.now()}`, role: "user", content: finalQuestion, used_sources: [] }]);
+    setAttachment(null);
+    setMessages((m) => [
+      ...m,
+      { id: `pending-${Date.now()}`, role: "user", content: finalQuestion, attachment_name: file?.name, used_sources: [] },
+    ]);
     try {
-      const res = await api.askAi(topicId, finalQuestion, activeChatId ?? null);
+      const res = await api.askAi(topicId, finalQuestion, activeChatId ?? null, file);
       setMessages((m) => [
         ...m,
         { id: `answer-${Date.now()}`, role: "assistant", content: res.answer, used_sources: res.used_sources },
@@ -88,6 +94,7 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
       setError(err.message);
       setMessages((m) => m.slice(0, -1));
       setQuestion(finalQuestion);
+      setAttachment(file);
     } finally {
       setAsking(false);
     }
@@ -119,6 +126,7 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
     if (message.role === "user") {
       return (
         <div key={message.id} className="chat-turn chat-turn-user">
+          {message.attachment_name && <div className="file-chip">📎 {message.attachment_name}</div>}
           <div className="chat-question">{message.content}</div>
         </div>
       );
@@ -198,6 +206,15 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
           {error && <div className="error-text">{error}</div>}
         </div>
 
+        {attachment && (
+          <div className="attachment-bar">
+            <span className="file-chip">📎 {attachment.name}</span>
+            <button type="button" className="btn-icon" onClick={() => setAttachment(null)} title="הסרת הקובץ">
+              ×
+            </button>
+          </div>
+        )}
+
         <form
           className="ask-input-row"
           onSubmit={(e) => {
@@ -205,6 +222,18 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
             handleAsk();
           }}
         >
+          <label className="btn attach-btn" title="צירוף קובץ (PDF, Word, Excel, CSV, טקסט)">
+            📎
+            <input
+              type="file"
+              accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md"
+              disabled={asking}
+              onChange={(e) => {
+                setAttachment(e.target.files[0] || null);
+                e.target.value = "";
+              }}
+            />
+          </label>
           <input
             type="text"
             value={question}

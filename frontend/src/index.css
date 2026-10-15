@@ -697,7 +697,23 @@ select {
   padding-top: 8px;
 }
 
-.ask-input-row input {
+.attach-btn {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.attach-btn input {
+  display: none;
+}
+
+.attachment-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-input-row input[type="text"] {
   flex: 1;
   padding: 10px 14px;
   border: 1px solid var(--border);
