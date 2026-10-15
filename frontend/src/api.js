@@ -34,12 +34,23 @@ export const api = {
   deleteTopic: (id) => fetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
   topicInsights: (id) => fetch(`${BASE_URL}/api/topics/${id}/insights`).then(handle),
   topicConnections: (id) => fetch(`${BASE_URL}/api/topics/${id}/connections`).then(handle),
-  askAi: (id, question) =>
+  askAi: (id, question, chatId = null) =>
     fetch(`${BASE_URL}/api/topics/${id}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, chat_id: chatId }),
     }).then(handle),
+
+  // chats
+  listChats: (topicId) => fetch(`${BASE_URL}/api/topics/${topicId}/chats`).then(handle),
+  getChat: (chatId) => fetch(`${BASE_URL}/api/chats/${chatId}`).then(handle),
+  renameChat: (chatId, title) =>
+    fetch(`${BASE_URL}/api/chats/${chatId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }).then(handle),
+  deleteChat: (chatId) => fetch(`${BASE_URL}/api/chats/${chatId}`, { method: "DELETE" }).then(handle),
 
   // sources
   listSources: (topicId) => fetch(`${BASE_URL}/api/topics/${topicId}/sources`).then(handle),

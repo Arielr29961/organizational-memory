@@ -44,13 +44,13 @@ def _extract_json(text: str) -> Any:
     return json.loads(text)
 
 
-def _call(system: str, user_content: str, max_tokens: int = 2000) -> str:
+def _call(system: str, user_content: str, max_tokens: int = 2000, history: Optional[list[dict]] = None) -> str:
     client = _get_client()
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user_content}],
+        messages=[*(history or []), {"role": "user", "content": user_content}],
     )
     parts = []
     for block in response.content:
@@ -175,6 +175,7 @@ def ask_question(
     timeline_text: str,
     cross_topic_text: str,
     question: str,
+    history: Optional[list[dict]] = None,
 ) -> str:
     user_content = f"""\
 נושא נוכחי: {topic_name}
@@ -190,4 +191,4 @@ def ask_question(
 {question}
 """
     system = _system_with_topic_context(ASK_SYSTEM_PROMPT, topic_name, topic_description)
-    return _call(system, user_content, max_tokens=3000)
+    return _call(system, user_content, max_tokens=3000, history=history)

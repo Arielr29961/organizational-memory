@@ -557,6 +557,74 @@ select {
   padding: 14px 18px;
 }
 
+.chat-turn-user {
+  background: var(--primary-bg);
+  border-color: transparent;
+}
+
+.chat-turn-user .chat-question {
+  margin-bottom: 0;
+}
+
+.ask-layout {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.ask-layout .ask-ai {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-list {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-list-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 4px 2px 2px;
+}
+
+.chat-list-item.active {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.chat-list-title {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  background: none;
+  border: none;
+  padding: 8px 8px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 800px) {
+  .ask-layout {
+    flex-direction: column;
+  }
+
+  .chat-list {
+    width: 100%;
+  }
+}
+
 .chat-question {
   font-weight: 600;
   margin-bottom: 8px;

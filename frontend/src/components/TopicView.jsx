@@ -24,6 +24,8 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
   const [tagFilter, setTagFilter] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
   const handledFocus = useRef(null);
+  // The open Ask-AI chat per topic, kept here so it survives tab and topic switches (undefined = not chosen yet).
+  const [activeChats, setActiveChats] = useState({});
 
   async function loadAll() {
     setLoading(true);
@@ -165,7 +167,14 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
         )}
         {activeTab === "tags" && <TagsPanel topicTags={topic.tags} />}
         {activeTab === "insights" && <InsightsPanel topicId={topicId} sources={sources} />}
-        {activeTab === "ask" && <AskAI topicId={topicId} onOpenSource={onOpenSource} />}
+        {activeTab === "ask" && (
+          <AskAI
+            topicId={topicId}
+            onOpenSource={onOpenSource}
+            activeChatId={activeChats[topicId]}
+            onActiveChatChange={(chatId) => setActiveChats((m) => ({ ...m, [topicId]: chatId }))}
+          />
+        )}
       </div>
 
       {showAddSource && (
