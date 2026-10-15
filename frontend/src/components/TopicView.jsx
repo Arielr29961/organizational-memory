@@ -165,7 +165,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             highlightId={highlightId}
           />
         )}
-        {activeTab === "tags" && <TagsPanel topicTags={topic.tags} />}
+        {activeTab === "tags" && <TagsPanel topicTags={topic.tags} onChanged={handleSourceMutated} />}
         {activeTab === "insights" && <InsightsPanel topicId={topicId} sources={sources} />}
         {activeTab === "ask" && (
           <AskAI

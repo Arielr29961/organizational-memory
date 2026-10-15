@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..serializers import topic_to_out
-from ..services import claude_service, file_extraction
+from ..services import claude_service, file_extraction, tag_utils
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -212,21 +212,20 @@ def ask_ai(
         )
     timeline_text = "\n\n".join(timeline_lines) or "(אין עדיין מקורות בנושא זה)"
 
-    topic_tag_names = {st.tag.name for s in timeline_sources for st in s.tags}
+    topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
     cross_lines = []
     context_sources = {
         s.id: {"id": s.id, "title": s.title, "date": str(s.date), "topic_id": topic.id, "topic_name": topic.name}
         for s in timeline_sources
     }
-    if topic_tag_names:
+    if topic_tag_keys:
         other_sources = (
             db.query(models.Source)
             .filter(models.Source.topic_id != topic_id)
             .all()
         )
         for s in other_sources:
-            s_tags = {st.tag.name for st in s.tags}
-            shared = topic_tag_names & s_tags
+            shared = {st.tag.name for st in s.tags if tag_utils.tag_key(st.tag.name) in topic_tag_keys}
             if shared:
                 cross_lines.append(
                     f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות משותפות: {', '.join(shared)}\n"

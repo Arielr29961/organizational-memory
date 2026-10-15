@@ -14,7 +14,8 @@ from .. import models, schemas
 from ..config import UPLOAD_DIR
 from ..database import get_db
 from ..serializers import source_to_out
-from ..services import claude_service, file_extraction
+from ..services import claude_service, file_extraction, tag_utils
+from ..services.tag_service import add_tag_to_source
 
 router = APIRouter(tags=["sources"])
 
@@ -50,31 +51,6 @@ def _filter_ai_tags(tags: list, topic_name: str = "") -> list[str]:
         seen.add(key)
         kept.append(t)
     return kept[:MAX_AI_TAGS]
-
-
-def _get_or_create_tag(db: Session, name: str) -> models.Tag:
-    name = name.strip()
-    tag = db.query(models.Tag).filter(models.Tag.name == name).first()
-    if not tag:
-        tag = models.Tag(name=name)
-        db.add(tag)
-        db.flush()
-    return tag
-
-
-def _add_tag_to_source(db: Session, source: models.Source, tag_name: str, origin: str):
-    tag_name = tag_name.strip()
-    if not tag_name:
-        return
-    tag = _get_or_create_tag(db, tag_name)
-    existing = (
-        db.query(models.SourceTag)
-        .filter(models.SourceTag.source_id == source.id, models.SourceTag.tag_id == tag.id)
-        .first()
-    )
-    if existing:
-        return
-    db.add(models.SourceTag(source_id=source.id, tag_id=tag.id, origin=origin))
 
 
 @router.get("/api/topics/{topic_id}/sources", response_model=list[schemas.SourceOut])
@@ -141,7 +117,7 @@ async def create_source(
     except json.JSONDecodeError:
         tag_list = []
     for t in tag_list:
-        _add_tag_to_source(db, source, t, "user")
+        add_tag_to_source(db, source, t, "user")
 
     db.commit()
     db.refresh(source)
@@ -192,7 +168,7 @@ def add_tag(source_id: str, payload: dict, db: Session = Depends(get_db)):
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "יש להזין שם תגית")
-    _add_tag_to_source(db, source, name, "user")
+    add_tag_to_source(db, source, name, "user")
     db.commit()
     db.refresh(source)
     return source_to_out(source)
@@ -274,7 +250,7 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
 
     suggested_tags = _filter_ai_tags(result.get("suggested_tags", []) or [], topic.name)
     for t in suggested_tags:
-        _add_tag_to_source(db, source, t, "ai")
+        add_tag_to_source(db, source, t, "ai")
 
     db.query(models.Insight).filter(models.Insight.source_id == source.id).delete()
     insight_map = {
@@ -299,7 +275,8 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
         related = candidates_by_id.get(related_id)
         if not related:
             continue
-        shared = (set(existing_tags) | set(suggested_tags)) & {st.tag.name for st in related.tags}
+        my_keys = {tag_utils.tag_key(n) for n in [*existing_tags, *suggested_tags]}
+        shared = {st.tag.name for st in related.tags if tag_utils.tag_key(st.tag.name) in my_keys}
         c = models.Connection(
             source_id=source.id,
             related_source_id=related_id,
@@ -312,10 +289,10 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(source)
 
-    suggested_names = {t.strip() for t in suggested_tags}
+    suggested_keys = {tag_utils.tag_key(n) for t in suggested_tags for n in tag_utils.split_tag_input(t)}
     return {
         "suggested_tags": [
-            t for t in source_to_out(source)["tags"] if t["origin"] == "ai" and t["name"] in suggested_names
+            t for t in source_to_out(source)["tags"] if t["origin"] == "ai" and tag_utils.tag_key(t["name"]) in suggested_keys
         ],
         "insights": [
             {

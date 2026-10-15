@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, SOURCE_TYPES, INSIGHT_TYPE_LABELS } from "../api";
 import Modal from "./Modal";
+import TagSuggest from "./TagSuggest";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -24,6 +25,11 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
   function addTagFromInput() {
     const t = tagInput.trim();
     if (t && !tags.includes(t)) setTags([...tags, t]);
+    setTagInput("");
+  }
+
+  function pickSuggestedTag(name) {
+    if (!tags.includes(name)) setTags([...tags, name]);
     setTagInput("");
   }
 
@@ -228,6 +234,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
               placeholder="הקלידו תגית ולחצו Enter"
             />
           </div>
+          <TagSuggest text={tagInput} exclude={tags} onPick={pickSuggestedTag} />
         </label>
 
         {error && <div className="error-text">{error}</div>}

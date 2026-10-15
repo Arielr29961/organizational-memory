@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, SOURCE_TYPE_LABELS } from "../api";
+import TagSuggest from "./TagSuggest";
 
 export default function SourceCard({ source, onMutated, highlighted }) {
   const [expanded, setExpanded] = useState(false);
@@ -12,6 +13,17 @@ export default function SourceCard({ source, onMutated, highlighted }) {
     setBusy(true);
     try {
       await api.addTag(source.id, newTag.trim());
+      setNewTag("");
+      await onMutated();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addTagByName(name) {
+    setBusy(true);
+    try {
+      await api.addTag(source.id, name);
       setNewTag("");
       await onMutated();
     } finally {
@@ -82,6 +94,7 @@ export default function SourceCard({ source, onMutated, highlighted }) {
             />
           </form>
         </div>
+        <TagSuggest text={newTag} exclude={source.tags.map((t) => t.name)} onPick={addTagByName} />
       </div>
     </div>
   );
