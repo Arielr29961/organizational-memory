@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import uuid
 from datetime import date as date_type
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -15,6 +17,39 @@ from ..serializers import source_to_out
 from ..services import claude_service, file_extraction
 
 router = APIRouter(tags=["sources"])
+
+
+# Safety net behind the prompt rules: AI tags that are too generic to link sources meaningfully.
+GENERIC_TAGS = {
+    "חוב", "חובות", "תיקים", "תיק", "kpi", "נתונים", "מידע", "דוח", "דו\"ח", "דוחות", "ניהול", "בעיה", "בעיות",
+    "שיפור", "ביצועים", "תהליך", "תהליכים", "עדכון", "סיכום", "ניתוח", "תוצאות", "נושא", "משימות", "החלטות",
+    "פגישה", "פגישות", "מייל", "מסמך", "מצגת", "טבלה", "שנה", "חודש", "רבעון", "כללי", "אחר",
+}
+MAX_AI_TAGS = 5
+
+
+def _filter_ai_tags(tags: list, topic_name: str = "") -> list[str]:
+    """Drop generic/low-value AI tags, dedupe, and cap the count."""
+    seen = set()
+    kept = []
+    for raw in tags:
+        if not isinstance(raw, str):
+            continue
+        t = raw.strip().lstrip("#").strip()
+        key = t.lower()
+        if (
+            len(t) < 2
+            or len(t) > 40
+            or len(t.split()) > 4
+            or key in seen
+            or key in GENERIC_TAGS
+            or key == topic_name.strip().lower()
+            or re.fullmatch(r"[\d\s./\-_,:]+", t)  # numbers, years, dates
+        ):
+            continue
+        seen.add(key)
+        kept.append(t)
+    return kept[:MAX_AI_TAGS]
 
 
 def _get_or_create_tag(db: Session, name: str) -> models.Tag:
@@ -208,6 +243,18 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
         for c in candidates
     ]
 
+    known_tags = [
+        name
+        for name, _ in (
+            db.query(models.Tag.name, func.count(models.SourceTag.source_id).label("n"))
+            .join(models.SourceTag, models.SourceTag.tag_id == models.Tag.id)
+            .group_by(models.Tag.id)
+            .order_by(func.count(models.SourceTag.source_id).desc())
+            .limit(60)
+            .all()
+        )
+    ]
+
     try:
         result = claude_service.analyze_source(
             topic.name,
@@ -218,13 +265,14 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
             source.content or "",
             existing_tags,
             candidate_payload,
+            known_tags,
         )
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise HTTPException(502, f"שגיאה בניתוח ה-AI: {exc}")
 
-    suggested_tags = result.get("suggested_tags", []) or []
+    suggested_tags = _filter_ai_tags(result.get("suggested_tags", []) or [], topic.name)
     for t in suggested_tags:
         _add_tag_to_source(db, source, t, "ai")
 
