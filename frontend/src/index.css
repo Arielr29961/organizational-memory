@@ -708,6 +708,41 @@ select {
   font-weight: 600;
 }
 
+.tag-synonyms {
+  margin-top: 14px;
+}
+
+.tag-synonyms h5 {
+  margin: 14px 0 6px;
+}
+
+.synonym-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.synonym-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.synonym-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.synonym-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .cleanup-row {
   display: flex;
   align-items: center;
