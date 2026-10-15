@@ -563,8 +563,53 @@ select {
 }
 
 .chat-answer {
-  white-space: pre-wrap;
   line-height: 1.7;
+}
+
+.answer-text p {
+  margin: 0 0 8px;
+}
+
+.answer-text h5 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+
+.answer-text ul,
+.answer-text ol {
+  margin: 0 0 8px;
+  padding-inline-start: 22px;
+}
+
+.source-link {
+  display: inline;
+  background: var(--primary-bg);
+  color: var(--primary-dark);
+  border: none;
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin: 0 2px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.source-link:hover {
+  text-decoration: underline;
+}
+
+.source-card-highlight {
+  animation: source-flash 3.5s ease-out;
+}
+
+@keyframes source-flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 3px var(--primary);
+  }
+  100% {
+    box-shadow: var(--shadow);
+  }
 }
 
 .chat-sources {

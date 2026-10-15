@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import AnswerText from "./AnswerText";
 
 const EXAMPLE_QUESTIONS = [
   "מה קרה בנושא הזה לאורך זמן?",
@@ -13,7 +14,7 @@ const EXAMPLE_QUESTIONS = [
   "מה אנחנו יודעים, מה אנחנו חושבים שאנחנו יודעים, ומה עדיין לא ידוע?",
 ];
 
-export default function AskAI({ topicId }) {
+export default function AskAI({ topicId, onOpenSource }) {
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState([]);
   const [asking, setAsking] = useState(false);
@@ -49,11 +50,27 @@ export default function AskAI({ topicId }) {
         {history.map((turn, idx) => (
           <div key={idx} className="chat-turn">
             <div className="chat-question">{turn.question}</div>
-            <div className="chat-answer">{turn.answer}</div>
+            <div className="chat-answer">
+              <AnswerText
+                text={turn.answer}
+                sourcesById={Object.fromEntries(turn.usedSources.map((s) => [s.id, s]))}
+                onOpenSource={onOpenSource}
+              />
+            </div>
             {turn.usedSources.length > 0 && (
               <div className="chat-sources">
-                מבוסס על {turn.usedSources.length} מקורות:{" "}
-                {turn.usedSources.map((s) => `${s.title} (${s.date})`).join(", ")}
+                מקורות שצוטטו:{" "}
+                {turn.usedSources.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="source-link"
+                    title={s.topic_name}
+                    onClick={() => onOpenSource(s.topic_id, s.id)}
+                  >
+                    {s.title}, {s.date}
+                  </button>
+                ))}
               </div>
             )}
           </div>
