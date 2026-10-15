@@ -680,6 +680,54 @@ select {
   }
 }
 
+.tag-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.tag-chip-suggest {
+  cursor: pointer;
+  border: 1px dashed var(--primary);
+  background: transparent;
+}
+
+.tags-cleanup {
+  margin-top: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+}
+
+.tags-cleanup summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cleanup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cleanup-names {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cleanup-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .chat-sources {
   margin-top: 10px;
   font-size: 12px;

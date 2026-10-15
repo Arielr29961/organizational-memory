@@ -80,6 +80,15 @@ export const api = {
 
   // tags
   listTags: () => fetch(`${BASE_URL}/api/tags`).then(handle),
+  similarTags: (name) => fetch(`${BASE_URL}/api/tags/similar?name=${encodeURIComponent(name)}`).then(handle),
+  tagCleanup: () => fetch(`${BASE_URL}/api/tags/cleanup`).then(handle),
+  mergeTag: (tagId, intoId) =>
+    fetch(`${BASE_URL}/api/tags/${tagId}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ into_id: intoId }),
+    }).then(handle),
+  splitTag: (tagId) => fetch(`${BASE_URL}/api/tags/${tagId}/split`, { method: "POST" }).then(handle),
   sourcesByTag: (name) => fetch(`${BASE_URL}/api/tags/${encodeURIComponent(name)}/sources`).then(handle),
 };
 
