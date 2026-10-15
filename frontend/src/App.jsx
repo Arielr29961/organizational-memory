@@ -7,6 +7,7 @@ import AddTopicModal from "./components/AddTopicModal";
 export default function App() {
   const [topics, setTopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
+  const [focusSource, setFocusSource] = useState(null);
   const [search, setSearch] = useState("");
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,12 @@ export default function App() {
     setSelectedTopicId(topic.id);
   }
 
+  // Jump to a source's card in its topic's timeline (a new object each time so repeated clicks re-trigger).
+  function handleOpenSource(topicId, sourceId) {
+    setSelectedTopicId(topicId);
+    setFocusSource({ topicId, sourceId });
+  }
+
   async function handleTopicDeleted(topicId) {
     if (selectedTopicId === topicId) setSelectedTopicId(null);
     await refreshTopics();
@@ -59,6 +66,8 @@ export default function App() {
             topicId={selectedTopicId}
             onTopicChanged={refreshTopics}
             onTopicDeleted={handleTopicDeleted}
+            focusSource={focusSource}
+            onOpenSource={handleOpenSource}
           />
         ) : (
           <div className="empty-state">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import Timeline from "./Timeline";
 import TagsPanel from "./TagsPanel";
@@ -13,7 +13,7 @@ const TABS = [
   { key: "ask", label: "שאל את ה-AI" },
 ];
 
-export default function TopicView({ topicId, onTopicChanged, onTopicDeleted }) {
+export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, focusSource, onOpenSource }) {
   const [topic, setTopic] = useState(null);
   const [sources, setSources] = useState([]);
   const [activeTab, setActiveTab] = useState("timeline");
@@ -22,6 +22,8 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted }) {
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const handledFocus = useRef(null);
 
   async function loadAll() {
     setLoading(true);
@@ -41,6 +43,20 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted }) {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
+
+  // When a source link was clicked: show the timeline, scroll to that source's card and highlight it.
+  useEffect(() => {
+    if (!focusSource || loading || topic?.id !== focusSource.topicId || handledFocus.current === focusSource) return;
+    handledFocus.current = focusSource;
+    setActiveTab("timeline");
+    setTagFilter(null);
+    // Wait a tick so the timeline tab has rendered the card.
+    setTimeout(() => {
+      document.getElementById(`source-${focusSource.sourceId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightId(focusSource.sourceId);
+    }, 100);
+    setTimeout(() => setHighlightId(null), 3500);
+  }, [focusSource, loading, topic]);
 
   async function handleSourceCreated() {
     setShowAddSource(false);
@@ -144,11 +160,12 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted }) {
             tagFilter={tagFilter}
             onClearFilter={() => setTagFilter(null)}
             onMutated={handleSourceMutated}
+            highlightId={highlightId}
           />
         )}
         {activeTab === "tags" && <TagsPanel topicTags={topic.tags} />}
         {activeTab === "insights" && <InsightsPanel topicId={topicId} sources={sources} />}
-        {activeTab === "ask" && <AskAI topicId={topicId} />}
+        {activeTab === "ask" && <AskAI topicId={topicId} onOpenSource={onOpenSource} />}
       </div>
 
       {showAddSource && (

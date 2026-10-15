@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -113,6 +115,24 @@ def topic_connections(topic_id: str, db: Session = Depends(get_db)):
     return results
 
 
+CITATION_RE = re.compile(r"\[\[\s*(?:id:\s*)?([0-9a-fA-F-]{36})\s*\]\]")
+
+
+def _resolve_citations(answer: str, context_sources: dict) -> tuple[str, list[dict]]:
+    """Keep only [[id]] markers that point to a source we actually sent; return those sources in citation order."""
+    cited: dict[str, dict] = {}
+
+    def replace(match: re.Match) -> str:
+        source_id = match.group(1).lower()
+        source = context_sources.get(source_id)
+        if not source:
+            return ""
+        cited.setdefault(source_id, source)
+        return f"[[{source_id}]]"
+
+    return CITATION_RE.sub(replace, answer), list(cited.values())
+
+
 @router.post("/{topic_id}/ask", response_model=schemas.AskResponse)
 def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get_db)):
     topic = db.get(models.Topic, topic_id)
@@ -124,13 +144,16 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
     for s in timeline_sources:
         tag_names = ", ".join(st.tag.name for st in s.tags)
         timeline_lines.append(
-            f"[{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}\n{s.content[:3000]}"
+            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}\n{s.content[:3000]}"
         )
     timeline_text = "\n\n".join(timeline_lines) or "(אין עדיין מקורות בנושא זה)"
 
     topic_tag_names = {st.tag.name for s in timeline_sources for st in s.tags}
     cross_lines = []
-    used_sources = [{"id": s.id, "title": s.title, "date": str(s.date), "topic_name": topic.name} for s in timeline_sources]
+    context_sources = {
+        s.id: {"id": s.id, "title": s.title, "date": str(s.date), "topic_id": topic.id, "topic_name": topic.name}
+        for s in timeline_sources
+    }
     if topic_tag_names:
         other_sources = (
             db.query(models.Source)
@@ -142,10 +165,16 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
             shared = topic_tag_names & s_tags
             if shared:
                 cross_lines.append(
-                    f"[{s.date}] נושא: {s.topic.name} | {s.title} | תגיות משותפות: {', '.join(shared)}\n"
+                    f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות משותפות: {', '.join(shared)}\n"
                     f"תקציר: {s.content[:800]}"
                 )
-                used_sources.append({"id": s.id, "title": s.title, "date": str(s.date), "topic_name": s.topic.name})
+                context_sources[s.id] = {
+                    "id": s.id,
+                    "title": s.title,
+                    "date": str(s.date),
+                    "topic_id": s.topic_id,
+                    "topic_name": s.topic.name,
+                }
     cross_text = "\n\n".join(cross_lines)
 
     try:
@@ -155,4 +184,5 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
 
-    return {"answer": answer, "used_sources": used_sources}
+    answer, cited_sources = _resolve_citations(answer, context_sources)
+    return {"answer": answer, "used_sources": cited_sources}

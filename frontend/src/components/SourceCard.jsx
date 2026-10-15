@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, SOURCE_TYPE_LABELS } from "../api";
 
-export default function SourceCard({ source, onMutated }) {
+export default function SourceCard({ source, onMutated, highlighted }) {
   const [expanded, setExpanded] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +38,7 @@ export default function SourceCard({ source, onMutated }) {
   const preview = source.content && source.content.length > 260 ? source.content.slice(0, 260) + "…" : source.content;
 
   return (
-    <div className="source-card">
+    <div id={`source-${source.id}`} className={`source-card ${highlighted ? "source-card-highlight" : ""}`}>
       <div className="source-card-date">
         <div className="date-badge">{source.date}</div>
       </div>

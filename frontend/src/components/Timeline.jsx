@@ -1,6 +1,6 @@
 import SourceCard from "./SourceCard";
 
-export default function Timeline({ sources, tagFilter, onClearFilter, onMutated }) {
+export default function Timeline({ sources, tagFilter, onClearFilter, onMutated, highlightId }) {
   const filtered = tagFilter ? sources.filter((s) => s.tags.some((t) => t.name === tagFilter)) : sources;
   const sorted = [...filtered].sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -17,7 +17,7 @@ export default function Timeline({ sources, tagFilter, onClearFilter, onMutated 
       {sorted.length === 0 && <div className="muted">אין מקורות להצגה{tagFilter ? " עם תגית זו" : ""}.</div>}
       <div className="timeline-list">
         {sorted.map((source) => (
-          <SourceCard key={source.id} source={source} onMutated={onMutated} />
+          <SourceCard key={source.id} source={source} onMutated={onMutated} highlighted={source.id === highlightId} />
         ))}
       </div>
     </div>
