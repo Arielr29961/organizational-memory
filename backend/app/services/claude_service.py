@@ -59,6 +59,21 @@ def _call(system: str, user_content: str, max_tokens: int = 2000) -> str:
     return "".join(parts)
 
 
+def _system_with_topic_context(base_prompt: str, topic_name: str, topic_description: Optional[str]) -> str:
+    """Append the topic's user-written description to the system prompt as standing context."""
+    description = (topic_description or "").strip()
+    if not description:
+        return base_prompt
+    return f"""{base_prompt}
+הקשר הנושא (הנחיית מערכת):
+הנושא הנוכחי: {topic_name}
+תיאור ומטרת הנושא, כפי שהוגדרו על ידי המשתמש: {description}
+
+התחשב בתיאור זה בכל שלב: הבן ממנו מה חשוב ורלוונטי עסקית בנושא, תעדף לפיו מה לציין ומה לתייג, וכוון את התובנות והתשובות למטרה שהוגדרה.
+התיאור הוא הקשר והנחיה בלבד - אל תציג אותו כעובדה שנאמרה במקורות, ואל תסיק ממנו מידע שאינו מופיע במקורות.
+"""
+
+
 ANALYZE_SYSTEM_PROMPT = """\
 אתה עוזר AI במערכת "זיכרון ארגוני" שעוזרת לצוותים לצבור ידע עסקי לאורך זמן.
 המשתמש הוסיף מקור מידע חדש (פגישה, מייל, מסמך וכו') תחת נושא עסקי מסוים.
@@ -127,7 +142,8 @@ def analyze_source(
 
 נתח את המקור החדש והחזר JSON לפי הפורמט שהוגדר.
 """
-    raw = _call(ANALYZE_SYSTEM_PROMPT, user_content, max_tokens=2500)
+    system = _system_with_topic_context(ANALYZE_SYSTEM_PROMPT, topic_name, topic_description)
+    raw = _call(system, user_content, max_tokens=2500)
     return _extract_json(raw)
 
 
@@ -171,4 +187,5 @@ def ask_question(
 שאלת המשתמש:
 {question}
 """
-    return _call(ASK_SYSTEM_PROMPT, user_content, max_tokens=3000)
+    system = _system_with_topic_context(ASK_SYSTEM_PROMPT, topic_name, topic_description)
+    return _call(system, user_content, max_tokens=3000)
