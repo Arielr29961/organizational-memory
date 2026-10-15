@@ -108,8 +108,37 @@ class AnalyzeResult(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    chat_id: Optional[str] = None  # continue this chat; a new chat is created when omitted
 
 
 class AskResponse(BaseModel):
     answer: str
     used_sources: List[dict] = []
+    chat_id: str
+    chat_title: str
+
+
+class ChatSummary(BaseModel):
+    id: str
+    title: str
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    used_sources: List[dict] = []
+    created_at: datetime
+
+
+class ChatDetail(BaseModel):
+    id: str
+    topic_id: str
+    title: str
+    messages: List[ChatMessageOut] = []
+
+
+class ChatRename(BaseModel):
+    title: str

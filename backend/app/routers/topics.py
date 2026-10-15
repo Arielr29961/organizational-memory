@@ -1,4 +1,6 @@
+import json
 import re
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -133,11 +135,28 @@ def _resolve_citations(answer: str, context_sources: dict) -> tuple[str, list[di
     return CITATION_RE.sub(replace, answer), list(cited.values())
 
 
+MAX_HISTORY_MESSAGES = 10
+
+
+def _chat_history(chat: models.Chat) -> list[dict]:
+    """The last few messages of a chat, as plain role/content pairs for the model (must start with a user turn)."""
+    messages = [{"role": m.role, "content": m.content} for m in chat.messages][-MAX_HISTORY_MESSAGES:]
+    while messages and messages[0]["role"] != "user":
+        messages.pop(0)
+    return messages
+
+
 @router.post("/{topic_id}/ask", response_model=schemas.AskResponse)
 def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get_db)):
     topic = db.get(models.Topic, topic_id)
     if not topic:
         raise HTTPException(404, "הנושא לא נמצא")
+
+    chat = None
+    if payload.chat_id:
+        chat = db.get(models.Chat, payload.chat_id)
+        if not chat or chat.topic_id != topic_id:
+            raise HTTPException(404, "השיחה לא נמצאה")
 
     timeline_sources = sorted(topic.sources, key=lambda s: s.date)
     timeline_lines = []
@@ -177,12 +196,33 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
                 }
     cross_text = "\n\n".join(cross_lines)
 
+    history = _chat_history(chat) if chat else []
     try:
         answer = claude_service.ask_question(
-            topic.name, topic.description, timeline_text, cross_text, payload.question
+            topic.name, topic.description, timeline_text, cross_text, payload.question, history
         )
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
 
     answer, cited_sources = _resolve_citations(answer, context_sources)
-    return {"answer": answer, "used_sources": cited_sources}
+
+    # Save only after a successful answer, so a failed call never leaves an empty chat behind.
+    now = datetime.utcnow()
+    if not chat:
+        chat = models.Chat(topic_id=topic_id, title=payload.question.strip()[:60] or "שיחה חדשה")
+        db.add(chat)
+        db.flush()
+    db.add(models.ChatMessage(chat_id=chat.id, role="user", content=payload.question, created_at=now))
+    db.add(
+        models.ChatMessage(
+            chat_id=chat.id,
+            role="assistant",
+            content=answer,
+            used_sources=json.dumps(cited_sources, ensure_ascii=False),
+            created_at=datetime.utcnow(),
+        )
+    )
+    chat.updated_at = datetime.utcnow()
+    db.commit()
+
+    return {"answer": answer, "used_sources": cited_sources, "chat_id": chat.id, "chat_title": chat.title}

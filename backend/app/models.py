@@ -20,6 +20,7 @@ class Topic(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sources = relationship("Source", back_populates="topic", cascade="all, delete-orphan")
+    chats = relationship("Chat", back_populates="topic", cascade="all, delete-orphan")
 
 
 class Source(Base):
@@ -84,3 +85,33 @@ class Connection(Base):
     description = Column(Text, nullable=False)
     shared_tags = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Chat(Base):
+    """A saved Ask-AI conversation about one topic."""
+
+    __tablename__ = "chats"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    topic_id = Column(String, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    topic = relationship("Topic", back_populates="chats")
+    messages = relationship(
+        "ChatMessage", back_populates="chat", cascade="all, delete-orphan", order_by="ChatMessage.created_at"
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    chat_id = Column(String, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String, nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+    used_sources = Column(Text, default="[]")  # JSON list of cited sources (assistant messages only)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    chat = relationship("Chat", back_populates="messages")
