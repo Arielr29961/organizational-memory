@@ -112,6 +112,8 @@ class ChatMessage(Base):
     role = Column(String, nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
     used_sources = Column(Text, default="[]")  # JSON list of cited sources (assistant messages only)
+    attachment_name = Column(String, nullable=True)  # file the user attached to this message (user messages only)
+    attachment_text = Column(Text, nullable=True)  # text extracted from it; the file itself is not stored
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chat = relationship("Chat", back_populates="messages")

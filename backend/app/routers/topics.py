@@ -1,14 +1,17 @@
 import json
 import re
+import tempfile
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
 from ..serializers import topic_to_out
-from ..services import claude_service
+from ..services import claude_service, file_extraction
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -136,25 +139,67 @@ def _resolve_citations(answer: str, context_sources: dict) -> tuple[str, list[di
 
 
 MAX_HISTORY_MESSAGES = 10
+ATTACHMENT_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".txt", ".md"}
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENT_CHARS = 30000
+
+
+def _read_attachment(file: UploadFile) -> tuple[str, str]:
+    """Extract text from a file attached to a chat message. The file is not kept on disk."""
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in ATTACHMENT_EXTENSIONS:
+        raise HTTPException(400, "סוג הקובץ אינו נתמך. ניתן לצרף PDF, Word, Excel, CSV או קובץ טקסט")
+    data = file.file.read(MAX_ATTACHMENT_BYTES + 1)
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(400, "הקובץ גדול מדי (מעל 10MB)")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"upload{suffix}"
+        path.write_bytes(data)
+        text = file_extraction.extract_text(path, file.filename)
+    if text.startswith("[שגיאה") or not text.strip():
+        raise HTTPException(400, "לא ניתן היה לחלץ טקסט מהקובץ")
+    if len(text) > MAX_ATTACHMENT_CHARS:
+        text = text[:MAX_ATTACHMENT_CHARS] + "\n[... הקובץ קוצר עקב אורכו ...]"
+    return file.filename, text
 
 
 def _chat_history(chat: models.Chat) -> list[dict]:
     """The last few messages of a chat, as plain role/content pairs for the model (must start with a user turn)."""
-    messages = [{"role": m.role, "content": m.content} for m in chat.messages][-MAX_HISTORY_MESSAGES:]
+    messages = [
+        {
+            "role": m.role,
+            "content": (
+                f"[קובץ מצורף: {m.attachment_name}]\n{m.attachment_text}\n\n{m.content}"
+                if m.attachment_text
+                else m.content
+            ),
+        }
+        for m in chat.messages
+    ][-MAX_HISTORY_MESSAGES:]
     while messages and messages[0]["role"] != "user":
         messages.pop(0)
     return messages
 
 
 @router.post("/{topic_id}/ask", response_model=schemas.AskResponse)
-def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get_db)):
+def ask_ai(
+    topic_id: str,
+    question: str = Form(...),
+    chat_id: Optional[str] = Form(None),  # continue this chat; a new chat is created when omitted
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+):
     topic = db.get(models.Topic, topic_id)
     if not topic:
         raise HTTPException(404, "הנושא לא נמצא")
 
+    attachment_name = attachment_text = None
+    if file is not None and file.filename:
+        attachment_name, attachment_text = _read_attachment(file)
+
     chat = None
-    if payload.chat_id:
-        chat = db.get(models.Chat, payload.chat_id)
+    if chat_id:
+        chat = db.get(models.Chat, chat_id)
         if not chat or chat.topic_id != topic_id:
             raise HTTPException(404, "השיחה לא נמצאה")
 
@@ -199,7 +244,8 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
     history = _chat_history(chat) if chat else []
     try:
         answer = claude_service.ask_question(
-            topic.name, topic.description, timeline_text, cross_text, payload.question, history
+            topic.name, topic.description, timeline_text, cross_text, question, history,
+            attachment_name, attachment_text,
         )
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
@@ -209,10 +255,19 @@ def ask_ai(topic_id: str, payload: schemas.AskRequest, db: Session = Depends(get
     # Save only after a successful answer, so a failed call never leaves an empty chat behind.
     now = datetime.utcnow()
     if not chat:
-        chat = models.Chat(topic_id=topic_id, title=payload.question.strip()[:60] or "שיחה חדשה")
+        chat = models.Chat(topic_id=topic_id, title=question.strip()[:60] or "שיחה חדשה")
         db.add(chat)
         db.flush()
-    db.add(models.ChatMessage(chat_id=chat.id, role="user", content=payload.question, created_at=now))
+    db.add(
+        models.ChatMessage(
+            chat_id=chat.id,
+            role="user",
+            content=question,
+            attachment_name=attachment_name,
+            attachment_text=attachment_text,
+            created_at=now,
+        )
+    )
     db.add(
         models.ChatMessage(
             chat_id=chat.id,

@@ -34,12 +34,13 @@ export const api = {
   deleteTopic: (id) => fetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
   topicInsights: (id) => fetch(`${BASE_URL}/api/topics/${id}/insights`).then(handle),
   topicConnections: (id) => fetch(`${BASE_URL}/api/topics/${id}/connections`).then(handle),
-  askAi: (id, question, chatId = null) =>
-    fetch(`${BASE_URL}/api/topics/${id}/ask`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, chat_id: chatId }),
-    }).then(handle),
+  askAi: (id, question, chatId = null, file = null) => {
+    const fd = new FormData();
+    fd.append("question", question);
+    if (chatId) fd.append("chat_id", chatId);
+    if (file) fd.append("file", file);
+    return fetch(`${BASE_URL}/api/topics/${id}/ask`, { method: "POST", body: fd }).then(handle);
+  },
 
   // chats
   listChats: (topicId) => fetch(`${BASE_URL}/api/topics/${topicId}/chats`).then(handle),

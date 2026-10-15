@@ -106,11 +106,6 @@ class AnalyzeResult(BaseModel):
 
 # ---------- Ask AI ----------
 
-class AskRequest(BaseModel):
-    question: str
-    chat_id: Optional[str] = None  # continue this chat; a new chat is created when omitted
-
-
 class AskResponse(BaseModel):
     answer: str
     used_sources: List[dict] = []
@@ -130,6 +125,7 @@ class ChatMessageOut(BaseModel):
     role: str
     content: str
     used_sources: List[dict] = []
+    attachment_name: Optional[str] = None
     created_at: datetime
 
 
