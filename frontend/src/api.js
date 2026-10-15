@@ -88,6 +88,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ into_id: intoId }),
     }).then(handle),
+  suggestTagSynonyms: () => fetch(`${BASE_URL}/api/tags/synonyms`, { method: "POST" }).then(handle),
+  mergeTagGroup: (keepId, mergeIds) =>
+    fetch(`${BASE_URL}/api/tags/merge-group`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
+    }).then(handle),
   splitTag: (tagId) => fetch(`${BASE_URL}/api/tags/${tagId}/split`, { method: "POST" }).then(handle),
   sourcesByTag: (name) => fetch(`${BASE_URL}/api/tags/${encodeURIComponent(name)}/sources`).then(handle),
 };

@@ -27,8 +27,9 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
   // The open Ask-AI chat per topic, kept here so it survives tab and topic switches (undefined = not chosen yet).
   const [activeChats, setActiveChats] = useState({});
 
-  async function loadAll() {
-    setLoading(true);
+  // silent: refresh data in place without the full-screen loading state (keeps open panels and their state).
+  async function loadAll({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     try {
       const [t, s] = await Promise.all([api.getTopic(topicId), api.listSources(topicId)]);
       setTopic(t);
@@ -62,19 +63,19 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
 
   async function handleSourceCreated() {
     setShowAddSource(false);
-    await loadAll();
+    await loadAll({ silent: true });
     await onTopicChanged();
   }
 
   async function handleSourceMutated() {
-    await loadAll();
+    await loadAll({ silent: true });
     await onTopicChanged();
   }
 
   async function saveDescription() {
     await api.updateTopic(topicId, { description: descriptionDraft });
     setEditingDescription(false);
-    await loadAll();
+    await loadAll({ silent: true });
     await onTopicChanged();
   }
 

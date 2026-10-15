@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, SOURCE_TYPE_LABELS } from "../api";
 import Modal from "./Modal";
+import TagSynonyms from "./TagSynonyms";
 
 export default function TagsPanel({ topicTags, onChanged }) {
   const [allTags, setAllTags] = useState([]);
@@ -60,7 +61,7 @@ export default function TagsPanel({ topicTags, onChanged }) {
         ))}
       </div>
 
-      {(cleanup.duplicates.length > 0 || cleanup.joined.length > 0 || cleanupError) && (
+      {allTags.length > 0 && (
         <details className="tags-cleanup">
           <summary>
             ניקוי ומיזוג תגיות ({cleanup.duplicates.length} זוגות דומים, {cleanup.joined.length} תגיות משורשרות)
@@ -106,6 +107,7 @@ export default function TagsPanel({ topicTags, onChanged }) {
               ))}
             </section>
           )}
+          <TagSynonyms onChanged={onChanged} />
         </details>
       )}
 

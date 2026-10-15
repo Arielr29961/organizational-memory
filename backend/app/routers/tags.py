@@ -5,13 +5,18 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..serializers import source_to_out
-from ..services import tag_service, tag_utils
+from ..services import claude_service, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
 
 class TagMerge(BaseModel):
     into_id: str
+
+
+class TagGroupMerge(BaseModel):
+    keep_id: str
+    merge_ids: list[str]
 
 
 @router.get("", response_model=list[schemas.TagWithCount])
@@ -35,6 +40,31 @@ def cleanup_candidates(db: Session = Depends(get_db)):
         "duplicates": [{"a": a, "b": b, "score": score} for a, b, score in tag_utils.find_duplicate_pairs(single)],
         "joined": joined,
     }
+
+
+@router.post("/synonyms")
+def suggest_synonyms(db: Session = Depends(get_db)):
+    """Ask Claude which existing tags could be merged. Only suggests: nothing is changed."""
+    tags = tag_service.build_ai_tag_input(db)
+    if len(tags) < 2:
+        return {"groups": [], "tags_checked": len(tags)}
+    try:
+        raw = claude_service.suggest_tag_groups(tags)
+    except claude_service.ClaudeNotConfiguredError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(502, f"שגיאה בקריאה ל-AI: {exc}")
+    return {"groups": tag_service.validate_tag_groups(raw, tags), "tags_checked": len(tags)}
+
+
+@router.post("/merge-group")
+def merge_group(payload: TagGroupMerge, db: Session = Depends(get_db)):
+    try:
+        return tag_service.merge_group(db, payload.keep_id, payload.merge_ids)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @router.post("/{tag_id}/merge")
