@@ -108,8 +108,12 @@ def _html_to_text(html: str) -> str:
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 
-def parse_eml(file_path: Path) -> dict:
-    """Headers and body of an .eml file: {subject, date, from, to, cc, body, attachments}; people are (name, email) pairs."""
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg")
+
+
+def parse_eml(file_path: Path, with_attachments: bool = False) -> dict:
+    """Headers and body of an .eml file: {subject, date, from, to, cc, body, attachments, attachment_files,
+    attachment_skipped}; people are (name, email) pairs. attachment_files ({name, data}) is filled only on request."""
     from email import policy
     from email.parser import BytesParser
     from email.utils import getaddresses, parsedate_to_datetime
@@ -132,6 +136,24 @@ def parse_eml(file_path: Path) -> dict:
         content = part.get_content()
         body = _html_to_text(content) if part.get_content_type() == "text/html" else str(content).strip()
 
+    files, skipped = [], []
+    if with_attachments:
+        for part in msg.iter_attachments():
+            ctype = part.get_content_type()
+            if part.get("Content-ID") and ctype.startswith("image/"):
+                continue  # a picture embedded in the text (signature, logo), not a real attachment
+            name = part.get_filename() or ""
+            if ctype == "message/rfc822":  # a mail attached as a message: keep it as an .eml file
+                inner = part.get_payload()
+                data = inner[0].as_bytes() if inner else None
+                name = name or "message.eml"
+            else:
+                data = part.get_payload(decode=True)
+            if not data:
+                skipped.append(name or "(ללא שם)")
+                continue
+            files.append({"name": Path(name or "attachment").name, "data": data})
+
     return {
         "subject": str(msg["subject"] or "").strip(),
         "date": sent if isinstance(sent, date_type) else None,
@@ -140,6 +162,8 @@ def parse_eml(file_path: Path) -> dict:
         "cc": people("cc"),
         "body": body,
         "attachments": [a.get_filename() or "(ללא שם)" for a in msg.iter_attachments()],
+        "attachment_files": files,
+        "attachment_skipped": skipped,
     }
 
 
@@ -147,7 +171,7 @@ def _format_people(pairs: list[tuple[str, str]]) -> str:
     return ", ".join(f"{name} <{addr}>" if name else addr for name, addr in pairs)
 
 
-def eml_to_text(mail: dict) -> str:
+def eml_to_text(mail: dict, mention_attachments: bool = True) -> str:
     lines = []
     if mail["from"]:
         lines.append(f"מאת: {_format_people(mail['from'])}")
@@ -158,14 +182,16 @@ def eml_to_text(mail: dict) -> str:
     if mail["date"]:
         lines.append(f"תאריך: {mail['date']}")
     lines.append(f"נושא: {mail['subject']}")
-    if mail["attachments"]:
+    if mention_attachments and mail["attachments"]:
         lines.append("קבצים מצורפים (לא נקראו): " + ", ".join(mail["attachments"]))
     return "\n".join(lines) + "\n\n" + mail["body"]
 
 
-def parse_mail(file_path: Path) -> dict:
-    """An .eml or Outlook .msg file as {subject, date, from, to, cc, body, attachments}."""
-    return parse_msg(file_path) if file_path.suffix.lower() == ".msg" else parse_eml(file_path)
+def parse_mail(file_path: Path, with_attachments: bool = False) -> dict:
+    """An .eml or Outlook .msg file as {subject, date, from, to, cc, body, attachments, attachment_files, attachment_skipped}."""
+    if file_path.suffix.lower() == ".msg":
+        return parse_msg(file_path, with_attachments)
+    return parse_eml(file_path, with_attachments)
 
 
 def _split_address(value: str) -> tuple[str, str]:
@@ -175,7 +201,7 @@ def _split_address(value: str) -> tuple[str, str]:
     return (name or "").strip(), (addr or "").strip()
 
 
-def parse_msg(file_path: Path) -> dict:
+def parse_msg(file_path: Path, with_attachments: bool = False) -> dict:
     """An Outlook .msg file, in the same shape as parse_eml. Recipients without an SMTP address are left out
     (Exchange-internal addresses are not usable as an e-mail address)."""
     import extract_msg
@@ -200,9 +226,19 @@ def parse_msg(file_path: Path) -> dict:
         if not body and msg.htmlBody:
             html = msg.htmlBody.decode("utf-8", errors="ignore") if isinstance(msg.htmlBody, (bytes, bytearray)) else str(msg.htmlBody)
             body = _html_to_text(html)
-        attachments = []
+        attachments, files, skipped = [], [], []
         for a in msg.attachments or []:
-            attachments.append(getattr(a, "longFilename", None) or getattr(a, "shortFilename", None) or "(ללא שם)")
+            name = getattr(a, "name", None) or getattr(a, "longFilename", None) or getattr(a, "shortFilename", None) or "(ללא שם)"
+            attachments.append(name)
+            if not with_attachments or getattr(a, "hidden", False):
+                continue
+            if getattr(a, "cid", None) and Path(name).suffix.lower() in IMAGE_EXTENSIONS:
+                continue  # a picture embedded in the text (signature, logo), not a real attachment
+            data = getattr(a, "data", None)
+            if isinstance(data, (bytes, bytearray)) and data:
+                files.append({"name": Path(name).name, "data": bytes(data)})
+            else:  # an attached message or something the library cannot hand over as bytes
+                skipped.append(name)
         return {
             "subject": str(msg.subject or "").strip(),
             "date": sent.date() if hasattr(sent, "date") else None,
@@ -211,6 +247,8 @@ def parse_msg(file_path: Path) -> dict:
             "cc": cc,
             "body": body,
             "attachments": attachments,
+            "attachment_files": files,
+            "attachment_skipped": skipped,
         }
     finally:
         msg.close()

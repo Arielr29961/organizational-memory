@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, SOURCE_TYPES } from "../api";
+import { api, formatSize, SOURCE_TYPES } from "../api";
 import ParticipantsInput from "./ParticipantsInput";
 import TagSuggest from "./TagSuggest";
 
@@ -226,6 +226,18 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
                 ⚠ {n}
               </p>
             ))}
+            {item.attachments.length > 0 && (
+              <div className="field-block">
+                <span>קבצים מצורפים שיישמרו עם המקור ({item.attachments.length})</span>
+                <ul className="intake-attachments">
+                  {item.attachments.map((a) => (
+                    <li key={a.file_name}>
+                      📎 {a.file_name} <span className="muted">{formatSize(a.size)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <label>
               תיאור
               <textarea rows={2} value={d.description} onChange={(e) => edit(item.id, { description: e.target.value })} />

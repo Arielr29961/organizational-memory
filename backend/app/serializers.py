@@ -66,6 +66,7 @@ def source_to_out(source: models.Source) -> dict:
         "edited_at": utc_iso(source.edited_at),
         "edited_by_name": source.editor.name if source.editor else None,
         "version_count": len(source.versions),
+        "attachments": [{"id": a.id, "file_name": a.file_name, "size": a.size or 0} for a in source.attachments],
         "tags": tags,
         "participants": participants,
     }

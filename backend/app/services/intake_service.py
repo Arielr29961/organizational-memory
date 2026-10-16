@@ -28,6 +28,11 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_CONTENT_CHARS = 300000
 MAX_TOPICS_IN_PROMPT = 60
 MAX_PARTICIPANTS = 20
+MAX_ATTACHMENTS = 10  # attachments imported per mail
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENT_TEXT = 20000  # characters of one attachment kept in the source
+AI_ATTACHMENT_CHARS = 6000  # characters of one attachment shown to the model
+AI_TOTAL_CHARS = 30000
 
 
 class IntakeError(Exception):
@@ -156,26 +161,78 @@ def _process(db: Session, item: models.IntakeItem) -> None:
     ext = path.suffix.lower()
 
     mail = None
+    ai_text = None
+    attachment_notes: list[str] = []
+    _delete_attachments(db, item)  # leftovers of an earlier attempt (retry)
     if ext in file_extraction.MAIL_EXTENSIONS:
-        mail = file_extraction.parse_mail(path)
-        text = file_extraction.eml_to_text(mail)
+        mail = file_extraction.parse_mail(path, with_attachments=True)
+        text = file_extraction.eml_to_text(mail, mention_attachments=False)
     else:
         text = file_extraction.extract_text(path, item.file_name)
     if not text.strip() or text.lstrip().startswith("[שגיאה") or text.lstrip().startswith("[לא ניתן"):
         raise IntakeError("לא ניתן היה לחלץ טקסט מהקובץ")
+    if mail:
+        content_extra, ai_extra, attachment_notes = _ingest_attachments(db, item, mail)
+        ai_text = (text[:12000] + ("\n\n" + ai_extra if ai_extra else ""))[:AI_TOTAL_CHARS]
+        text = text + ("\n\n" + content_extra if content_extra else "")
     item.content = text[:MAX_CONTENT_CHARS]
 
     entries = _topic_entries(_editable_topics(db, owner))
     headers = None
     if mail:
         headers = f"נושא: {mail['subject']}; תאריך: {mail['date'] or '-'}"
-    raw = claude_service.propose_intake(item.file_name, text, entries, _known_tags(db, owner), str(date_type.today()), headers)
+    raw = claude_service.propose_intake(item.file_name, ai_text or text, entries, _known_tags(db, owner), str(date_type.today()), headers)
     if not isinstance(raw, dict):
         raise IntakeError("תשובת ה-AI לא הייתה תקינה")
-    _apply_proposal(db, item, raw, entries, text, mail)
+    _apply_proposal(db, item, raw, entries, text, mail, attachment_notes)
 
 
-def _apply_proposal(db: Session, item: models.IntakeItem, raw: dict, entries: list[dict], text: str, mail: dict | None) -> None:
+def _ingest_attachments(db: Session, item: models.IntakeItem, mail: dict) -> tuple[str, str, list[str]]:
+    """Stores the mail's attachments for download and reads the ones that have text. Returns (text sections for the
+    source content, shorter sections for the model, notes about what could not be used)."""
+    files = mail.get("attachment_files") or []
+    notes: list[str] = []
+    if len(files) > MAX_ATTACHMENTS:
+        notes.append(f"{len(files) - MAX_ATTACHMENTS} קבצים מצורפים נוספים לא יובאו (מעל {MAX_ATTACHMENTS} למייל)")
+        files = files[:MAX_ATTACHMENTS]
+    content_parts, ai_parts = [], []
+    for f in files:
+        name = Path(f["name"]).name or "attachment"
+        data = f["data"]
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            notes.append(f"{name}: גדול מדי (מעל 20MB), לא יובא")
+            continue
+        ext = Path(name).suffix.lower()
+        dest = UPLOAD_DIR / f"att-{uuid.uuid4()}{ext}"
+        dest.write_bytes(data)
+        db.add(models.IntakeAttachment(item_id=item.id, file_name=name, file_path=str(dest), size=len(data)))
+        if ext not in ALLOWED_EXTENSIONS:
+            notes.append(f"{name}: סוג קובץ שאינו נקרא, נשמר להורדה בלבד")
+            continue
+        text = file_extraction.extract_text(dest, name)
+        if text.lstrip().startswith(("[שגיאה", "[לא ניתן")):
+            notes.append(f"{name}: לא ניתן היה לקרוא את הטקסט, נשמר להורדה בלבד")
+        elif not text.strip():
+            notes.append(f"{name}: לא נמצא בו טקסט (אולי סריקה), נשמר להורדה בלבד")
+        else:
+            cut = text[:MAX_ATTACHMENT_TEXT] + ("\n[... הקובץ קוצר עקב אורכו ...]" if len(text) > MAX_ATTACHMENT_TEXT else "")
+            content_parts.append(f"--- קובץ מצורף: {name} ---\n{cut}")
+            ai_parts.append(f"--- קובץ מצורף: {name} ---\n{text[:AI_ATTACHMENT_CHARS]}")
+    for name in mail.get("attachment_skipped") or []:
+        notes.append(f"{name}: לא ניתן היה לשלוף את הקובץ (למשל הודעה מוטמעת), לא יובא")
+    db.flush()
+    return "\n\n".join(content_parts), "\n\n".join(ai_parts), notes
+
+
+def _delete_attachments(db: Session, item: models.IntakeItem) -> None:
+    """Removes the stored attachments of a proposal (rows and files)."""
+    for a in list(item.attachments):
+        Path(a.file_path).unlink(missing_ok=True)
+        db.delete(a)
+    db.flush()
+
+
+def _apply_proposal(db: Session, item: models.IntakeItem, raw: dict, entries: list[dict], text: str, mail: dict | None, extra_notes: list[str] | None = None) -> None:
     by_key = {e["key"]: e for e in entries}
     chosen = by_key.get(raw.get("topic")) if isinstance(raw.get("topic"), str) else None
     item.topic_id = chosen["topic"].id if chosen else None
@@ -221,8 +278,7 @@ def _apply_proposal(db: Session, item: models.IntakeItem, raw: dict, entries: li
                 name = ""  # a name the model made up (e.g. from the address) is not a name found in the file
             candidates.append((name, p["email"]))
     item.participants = json.dumps(_person_pairs(candidates, db, notes), ensure_ascii=False)
-    if mail and mail["attachments"]:
-        notes.append("קבצים מצורפים למייל לא נקראו: " + ", ".join(mail["attachments"]))
+    notes.extend(extra_notes or [])
     item.notes = json.dumps(notes, ensure_ascii=False)
     item.status = "pending"
     item.error = None
@@ -273,6 +329,10 @@ def approve_item(db: Session, user: models.Person, item: models.IntakeItem) -> m
     for tag in json.loads(item.tags or "[]"):
         tag_service.add_tag_to_source(db, source, tag, "ai")
 
+    for a in list(item.attachments):  # the files stay where they are; they now belong to the source
+        db.add(models.SourceAttachment(source_id=source.id, file_name=a.file_name, file_path=a.file_path, size=a.size))
+        db.delete(a)
+
     item.status = "approved"
     item.source_id = source.id
     item.topic_id = topic.id
@@ -285,6 +345,8 @@ def delete_item(db: Session, item: models.IntakeItem) -> None:
     """Reject: the proposal and its stored file are removed (an approved item's file belongs to its source)."""
     if item.status != "approved":
         Path(item.file_path).unlink(missing_ok=True)
+        for a in item.attachments:
+            Path(a.file_path).unlink(missing_ok=True)
     db.delete(item)
 
 

@@ -203,16 +203,12 @@ def restore_version(source_id: str, version_id: str, db: Session = Depends(get_d
 INLINE_TYPES = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8", ".csv": "text/plain; charset=utf-8"}
 
 
-@router.get("/api/sources/{source_id}/file")
-def source_file(source_id: str, inline: bool = False, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    """The original file of a source, for anyone who can see the topic. inline=true shows PDF/text in the browser."""
-    source = get_source_as(db, user, source_id, "viewer")
-    path = Path(source.file_path) if source.file_path else None
+def _file_response(path_str: str | None, name: str, inline: bool):
+    path = Path(path_str) if path_str else None
     if not path or not path.exists():
-        raise HTTPException(404, "אין קובץ מצורף למקור הזה" if not source.file_path else "הקובץ לא נמצא בשרת")
+        raise HTTPException(404, "אין קובץ מצורף למקור הזה" if not path_str else "הקובץ לא נמצא בשרת")
     if not path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
         raise HTTPException(404, "הקובץ לא נמצא בשרת")  # never serve anything outside the uploads folder
-    name = source.file_name or path.name
     ext = Path(name).suffix.lower()
     if inline and ext in INLINE_TYPES:
         return FileResponse(path, media_type=INLINE_TYPES[ext], filename=name, content_disposition_type="inline", headers={"X-Content-Type-Options": "nosniff"})
@@ -220,14 +216,32 @@ def source_file(source_id: str, inline: bool = False, db: Session = Depends(get_
     return FileResponse(path, media_type=media, filename=name, content_disposition_type="attachment", headers={"X-Content-Type-Options": "nosniff"})
 
 
+@router.get("/api/sources/{source_id}/file")
+def source_file(source_id: str, inline: bool = False, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """The original file of a source, for anyone who can see the topic. inline=true shows PDF/text in the browser."""
+    source = get_source_as(db, user, source_id, "viewer")
+    return _file_response(source.file_path, source.file_name or "file", inline)
+
+
+@router.get("/api/sources/{source_id}/attachments/{attachment_id}/file")
+def attachment_file(source_id: str, attachment_id: str, inline: bool = False, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """A file that came attached to the imported e-mail."""
+    source = get_source_as(db, user, source_id, "viewer")
+    attachment = next((a for a in source.attachments if a.id == attachment_id), None)
+    if not attachment:
+        raise HTTPException(404, "הקובץ המצורף לא נמצא")
+    return _file_response(attachment.file_path, attachment.file_name, inline)
+
+
 @router.delete("/api/sources/{source_id}")
 def delete_source(source_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     source = get_source_as(db, user, source_id, "editor")
-    if source.file_path:
-        try:
-            Path(source.file_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+    for stored in [source.file_path, *[a.file_path for a in source.attachments]]:
+        if stored:
+            try:
+                Path(stored).unlink(missing_ok=True)
+            except Exception:
+                pass
     tag_ids = {st.tag_id for st in source.tags}
     db.delete(source)
     db.commit()
