@@ -21,6 +21,23 @@ class TagWithCount(BaseModel):
     count: int
 
 
+# ---------- People ----------
+
+class PersonOut(BaseModel):
+    id: str
+    email: str
+    name: str
+
+
+class PersonIn(BaseModel):
+    email: str
+    name: Optional[str] = None  # required only the first time an e-mail address is used
+
+
+class PersonUpdate(BaseModel):
+    name: str
+
+
 # ---------- Topics ----------
 
 class TopicCreate(BaseModel):
@@ -59,6 +76,7 @@ class SourceOut(BaseModel):
     file_name: Optional[str] = None
     created_at: datetime
     tags: List[TagOut] = []
+    participants: List[PersonOut] = []
 
     class Config:
         from_attributes = True

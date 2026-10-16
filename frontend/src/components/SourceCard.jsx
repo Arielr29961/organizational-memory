@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, SOURCE_TYPE_LABELS } from "../api";
+import ParticipantsInput from "./ParticipantsInput";
 import TagSuggest from "./TagSuggest";
 
 export default function SourceCard({ source, onMutated, highlighted }) {
@@ -73,6 +74,23 @@ export default function SourceCard({ source, onMutated, highlighted }) {
             </button>
           )}
         </p>
+
+        <details className="participants-details" open={source.participants.length > 0 || undefined}>
+          <summary>
+            👥 משתתפים{source.participants.length > 0 ? ` (${source.participants.length})` : ""}
+          </summary>
+          <ParticipantsInput
+            participants={source.participants}
+            onAdd={async (p) => {
+              await api.addParticipant(source.id, p);
+              await onMutated();
+            }}
+            onRemove={async (p) => {
+              await api.removeParticipant(source.id, p.id);
+              await onMutated();
+            }}
+          />
+        </details>
 
         <div className="tags-row">
           {source.tags.map((tag) => (

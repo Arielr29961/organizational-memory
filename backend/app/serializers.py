@@ -25,10 +25,22 @@ def topic_to_out(db: Session, topic: models.Topic) -> dict:
     }
 
 
+def participants_text(source: models.Source) -> str:
+    """' | משתתפים: ...' fragment for AI context lines (empty when the source has no participants)."""
+    if not source.participants:
+        return ""
+    names = ", ".join(f"{sp.person.name} <{sp.person.email}>" for sp in source.participants)
+    return f" | משתתפים: {names}"
+
+
 def source_to_out(source: models.Source) -> dict:
     tags = [
         {"id": st.tag.id, "name": st.tag.name, "origin": st.origin}
         for st in sorted(source.tags, key=lambda t: t.tag.name)
+    ]
+    participants = [
+        {"id": sp.person.id, "email": sp.person.email, "name": sp.person.name}
+        for sp in sorted(source.participants, key=lambda p: p.person.name)
     ]
     return {
         "id": source.id,
@@ -42,4 +54,5 @@ def source_to_out(source: models.Source) -> dict:
         "file_name": source.file_name,
         "created_at": source.created_at,
         "tags": tags,
+        "participants": participants,
     }

@@ -102,6 +102,7 @@ def analyze_source(
     content: str,
     existing_tags: list[str],
     known_tags: Optional[list[str]] = None,
+    participants: Optional[list[str]] = None,
 ) -> dict:
     user_content = f"""\
 נושא: {topic_name}
@@ -113,6 +114,7 @@ def analyze_source(
 כותרת: {source_title}
 סוג: {source_type}
 תאריך: {source_date}
+משתתפים/מכותבים: {', '.join(participants or []) or '-'}
 תוכן:
 {content[:8000]}
 
@@ -225,6 +227,7 @@ def select_related_sources(
         f"- {e['key']} | נושא: {e['source'].topic.name} | {e['source'].date} | {e['source'].title} | "
         f"תגיות: {', '.join(e['tags']) or '-'}"
         + (f" | חולק תגיות עם הנושא: {', '.join(e['shared_tags'])}" if e["shared_tags"] else "")
+        + (f" | משתתפים: {', '.join(sp.person.name for sp in e['source'].participants)}" if e["source"].participants else "")
         + f" | תקציר: {(e['source'].content or '')[:200].replace(chr(10), ' ')}"
         for e in index
     )

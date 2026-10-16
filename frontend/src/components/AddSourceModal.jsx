@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, SOURCE_TYPES } from "../api";
 import Modal from "./Modal";
+import ParticipantsInput from "./ParticipantsInput";
 import TagSuggest from "./TagSuggest";
 
 function todayStr() {
@@ -15,6 +16,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
+  const [participants, setParticipants] = useState([]);
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -56,6 +58,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
       fd.append("content", content);
       fd.append("description", description);
       fd.append("tags", JSON.stringify(tags));
+      fd.append("participants", JSON.stringify(participants));
       if (file) fd.append("file", file);
 
       const source = await api.createSource(topicId, fd);
@@ -179,6 +182,15 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
           תיאור קצר (אופציונלי)
           <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
+
+        <div className="field-block">
+          <span className="field-label">משתתפים / מכותבים (אופציונלי)</span>
+          <ParticipantsInput
+            participants={participants}
+            onAdd={(p) => setParticipants((list) => [...list, p])}
+            onRemove={(p) => setParticipants((list) => list.filter((x) => x.email !== p.email))}
+          />
+        </div>
 
         <label>
           תגיות

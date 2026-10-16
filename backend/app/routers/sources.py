@@ -14,7 +14,7 @@ from .. import models, schemas
 from ..config import UPLOAD_DIR
 from ..database import get_db
 from ..serializers import source_to_out
-from ..services import claude_service, file_extraction, tag_utils
+from ..services import claude_service, file_extraction, people_service, tag_utils
 from ..services.tag_service import add_tag_to_source, delete_if_unused
 
 router = APIRouter(tags=["sources"])
@@ -71,12 +71,20 @@ async def create_source(
     content: str = Form(""),
     description: str = Form(""),
     tags: str = Form("[]"),
+    participants: str = Form("[]"),  # JSON list of {"email", "name"}
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ):
     topic = db.get(models.Topic, topic_id)
     if not topic:
         raise HTTPException(404, "הנושא לא נמצא")
+
+    try:
+        participant_list = json.loads(participants) if participants else []
+        if not isinstance(participant_list, list):
+            raise ValueError("participants must be a list")
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(400, "פורמט משתתפים לא תקין")
 
     file_name = None
     file_path_str = None
@@ -111,6 +119,15 @@ async def create_source(
     )
     db.add(source)
     db.flush()
+
+    try:
+        for p in participant_list:
+            people_service.add_participant(db, source, p.get("email", ""), p.get("name"))
+    except (ValueError, AttributeError) as exc:
+        db.rollback()
+        if file_path_str:
+            Path(file_path_str).unlink(missing_ok=True)
+        raise HTTPException(400, str(exc))
 
     try:
         tag_list = json.loads(tags) if tags else []
@@ -194,6 +211,38 @@ def remove_tag(source_id: str, tag_id: str, db: Session = Depends(get_db)):
     return source_to_out(source)
 
 
+@router.post("/api/sources/{source_id}/participants", response_model=schemas.SourceOut)
+def add_participant(source_id: str, payload: schemas.PersonIn, db: Session = Depends(get_db)):
+    source = db.get(models.Source, source_id)
+    if not source:
+        raise HTTPException(404, "המקור לא נמצא")
+    try:
+        people_service.add_participant(db, source, payload.email, payload.name)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc))
+    db.commit()
+    db.refresh(source)
+    return source_to_out(source)
+
+
+@router.delete("/api/sources/{source_id}/participants/{person_id}", response_model=schemas.SourceOut)
+def remove_participant(source_id: str, person_id: str, db: Session = Depends(get_db)):
+    source = db.get(models.Source, source_id)
+    if not source:
+        raise HTTPException(404, "המקור לא נמצא")
+    link = (
+        db.query(models.SourceParticipant)
+        .filter(models.SourceParticipant.source_id == source_id, models.SourceParticipant.person_id == person_id)
+        .first()
+    )
+    if link:
+        db.delete(link)
+        db.commit()
+    db.refresh(source)
+    return source_to_out(source)
+
+
 @router.post("/api/sources/{source_id}/analyze", response_model=schemas.AnalyzeResult)
 def analyze_source(source_id: str, db: Session = Depends(get_db)):
     source = db.get(models.Source, source_id)
@@ -225,6 +274,7 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
             source.content or "",
             existing_tags,
             known_tags,
+            [sp.person.name for sp in source.participants],
         )
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
