@@ -32,8 +32,6 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handle),
   deleteTopic: (id) => fetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
-  topicInsights: (id) => fetch(`${BASE_URL}/api/topics/${id}/insights`).then(handle),
-  topicConnections: (id) => fetch(`${BASE_URL}/api/topics/${id}/connections`).then(handle),
   askAi: (id, question, chatId = null, file = null) => {
     const fd = new FormData();
     fd.append("question", question);
@@ -116,11 +114,3 @@ export const SOURCE_TYPES = [
 ];
 
 export const SOURCE_TYPE_LABELS = Object.fromEntries(SOURCE_TYPES.map((t) => [t.value, t.label]));
-
-export const INSIGHT_TYPE_LABELS = {
-  fact: "עובדה",
-  decision: "החלטה",
-  hypothesis: "השערה",
-  open_question: "שאלה פתוחה",
-  action_item: "משימה נדרשת",
-};

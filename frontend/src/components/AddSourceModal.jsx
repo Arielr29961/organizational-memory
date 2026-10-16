@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, SOURCE_TYPES, INSIGHT_TYPE_LABELS } from "../api";
+import { api, SOURCE_TYPES } from "../api";
 import Modal from "./Modal";
 import TagSuggest from "./TagSuggest";
 
@@ -92,7 +92,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
   if (createdSourceId) {
     return (
       <Modal title="המקור נשמר — ניתוח AI" onClose={handleFinish} wide>
-        {analyzing && <div className="muted">מריץ ניתוח AI על המקור (תגיות, עובדות, קשרים אפשריים)...</div>}
+        {analyzing && <div className="muted">מריץ ניתוח AI להצעת תגיות...</div>}
         {error && <div className="error-text">{error}</div>}
         {analysis && (
           <div className="analysis-result">
@@ -117,41 +117,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated }) {
               </section>
             )}
 
-            {["fact", "decision", "hypothesis", "open_question", "action_item"].map((type) => {
-              const items = analysis.insights.filter((i) => i.insight_type === type);
-              if (items.length === 0) return null;
-              return (
-                <section key={type}>
-                  <h4>{INSIGHT_TYPE_LABELS[type]}</h4>
-                  <ul>
-                    {items.map((i) => (
-                      <li key={i.id}>{i.content}</li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-
-            {analysis.connections.length > 0 && (
-              <section>
-                <h4>קשרים אפשריים למקורות אחרים</h4>
-                <ul>
-                  {analysis.connections.map((c) => (
-                    <li key={c.id}>
-                      <strong>
-                        {c.related_title} ({c.related_topic_name})
-                      </strong>
-                      {c.shared_tags && <span className="muted"> — תגיות משותפות: {c.shared_tags}</span>}
-                      <div>{c.description}</div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {analysis.suggested_tags.length === 0 &&
-              analysis.insights.length === 0 &&
-              analysis.connections.length === 0 && <div className="muted">ה-AI לא זיהה תובנות נוספות במקור זה.</div>}
+            {analysis.suggested_tags.length === 0 && <div className="muted">ה-AI לא הציע תגיות למקור זה.</div>}
           </div>
         )}
         <div className="form-actions">
