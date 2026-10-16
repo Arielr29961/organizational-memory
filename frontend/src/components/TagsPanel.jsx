@@ -78,8 +78,8 @@ export default function TagsPanel({ topicTags, onChanged }) {
 
           {cleanup.unused.length > 0 && (
             <section>
-              <h4>תגיות שאינן בשימוש ({cleanup.unused.length})</h4>
-              <p className="muted">אף מקור לא מסומן בהן, למשל אחרי מחיקת מקורות או מיזוג. מחיקה לא משפיעה על מקורות.</p>
+              <h4>תגיות שאינן בשימוש בכל הנושאים ({cleanup.unused.length})</h4>
+              <p className="muted">התגיות משותפות לכל הנושאים, ולכן הרשימה כוללת גם תגיות שלא קשורות לנושא הזה. אף מקור לא מסומן בהן, ולכן הן לא מופיעות בראש עמוד אף נושא (למשל אחרי שהוסרו מהמקור האחרון שלהן). מחיקה לא משפיעה על מקורות.</p>
               <div className="tags-row">
                 {cleanup.unused.map((tag) => (
                   <span key={tag.id} className="tag-chip">
