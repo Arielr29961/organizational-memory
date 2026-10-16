@@ -15,7 +15,7 @@ const EXAMPLE_QUESTIONS = [
 ];
 
 // activeChatId: undefined = not chosen yet (open the latest chat), null = a new empty chat, string = that chat.
-export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveChatChange }) {
+export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveChatChange, focusTag, onClearFocus }) {
   const [chats, setChats] = useState([]);
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
@@ -79,10 +79,17 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
     setAttachment(null);
     setMessages((m) => [
       ...m,
-      { id: `pending-${Date.now()}`, role: "user", content: finalQuestion, attachment_name: file?.name, used_sources: [] },
+      {
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content: finalQuestion,
+        attachment_name: file?.name,
+        context_tag: focusTag,
+        used_sources: [],
+      },
     ]);
     try {
-      const res = await api.askAi(topicId, finalQuestion, activeChatId ?? null, file);
+      const res = await api.askAi(topicId, finalQuestion, activeChatId ?? null, file, focusTag);
       setMessages((m) => [
         ...m,
         { id: `answer-${Date.now()}`, role: "assistant", content: res.answer, used_sources: res.used_sources },
@@ -127,6 +134,7 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
       return (
         <div key={message.id} className="chat-turn chat-turn-user">
           {message.attachment_name && <div className="file-chip">📎 {message.attachment_name}</div>}
+          {message.context_tag && <div className="context-tag-chip">בהקשר #{message.context_tag}</div>}
           <div className="chat-question">{message.content}</div>
         </div>
       );
@@ -206,6 +214,15 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
           {error && <div className="error-text">{error}</div>}
         </div>
 
+        {focusTag && (
+          <div className="filter-banner">
+            מתמקד בתגית <strong>#{focusTag}</strong>: השאלה תתבסס רק על מקורות עם התגית הזו (גם מנושאים אחרים שלך)
+            <button type="button" className="link-btn" onClick={onClearFocus}>
+              נקה מיקוד
+            </button>
+          </div>
+        )}
+
         {attachment && (
           <div className="attachment-bar">
             <span className="file-chip">📎 {attachment.name}</span>
@@ -238,7 +255,7 @@ export default function AskAI({ topicId, onOpenSource, activeChatId, onActiveCha
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={messages.length ? "המשיכו את השיחה..." : "שאלו כל שאלה על הנושא הזה..."}
+            placeholder={focusTag ? `שאלו על המקורות עם התגית #${focusTag}...` : messages.length ? "המשיכו את השיחה..." : "שאלו כל שאלה על הנושא הזה..."}
             disabled={asking}
           />
           <button type="submit" className="btn btn-primary" disabled={asking}>

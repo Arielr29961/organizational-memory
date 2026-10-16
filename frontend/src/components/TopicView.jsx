@@ -200,6 +200,8 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             onOpenSource={onOpenSource}
             activeChatId={activeChats[topicId]}
             onActiveChatChange={(chatId) => setActiveChats((m) => ({ ...m, [topicId]: chatId }))}
+            focusTag={tagFilter}
+            onClearFocus={() => setTagFilter(null)}
           />
         )}
       </div>
@@ -209,7 +211,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
       )}
 
       {showAddSource && (
-        <AddSourceModal topicId={topicId} onClose={() => setShowAddSource(false)} onCreated={handleSourceCreated} />
+        <AddSourceModal topicId={topicId} initialTags={tagFilter ? [tagFilter] : []} onClose={() => setShowAddSource(false)} onCreated={handleSourceCreated} />
       )}
     </div>
   );

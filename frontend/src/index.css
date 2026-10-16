@@ -1081,3 +1081,10 @@ select {
 .share-add h4 {
   margin: 0 0 6px;
 }
+
+.context-tag-chip {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--primary);
+  margin-bottom: 2px;
+}

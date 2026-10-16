@@ -125,27 +125,15 @@ def _chat_history(chat: models.Chat) -> list[dict]:
     return messages
 
 
-@router.post("/{topic_id}/ask", response_model=schemas.AskResponse)
-def ask_ai(
-    topic_id: str,
-    question: str = Form(...),
-    chat_id: Optional[str] = Form(None),  # continue this chat; a new chat is created when omitted
-    file: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db), user: models.Person = Depends(get_current_user),
-):
-    topic = get_topic_as(db, user, topic_id, "viewer")
-
-    attachment_name = attachment_text = None
-    if file is not None and file.filename:
-        attachment_name, attachment_text = _read_attachment(file)
-
-    chat = None
-    if chat_id:
-        chat = db.get(models.Chat, chat_id)
-        if not chat or chat.topic_id != topic_id or chat.created_by != user.id:
-            raise HTTPException(404, "השיחה לא נמצאה")
-
+def build_ask_context(db: Session, user: models.Person, topic: models.Topic, question: str, chat, focus_tag: Optional[str]):
+    """The text Claude gets as context: the topic's sources (only those with the focus tag when one is set) and sources
+    of the user's other accessible topics (those with the same tag in focus mode, otherwise picked by Claude).
+    Returns (timeline_text, cross_text, context_sources)."""
+    topic_id = topic.id
+    focus_key = tag_utils.tag_key(focus_tag) if focus_tag else None
     timeline_sources = sorted(topic.sources, key=lambda s: s.date)
+    if focus_key:
+        timeline_sources = [s for s in timeline_sources if any(tag_utils.tag_key(st.tag.name) == focus_key for st in s.tags)]
     # Share the context budget between the topic's sources so a big topic cannot overflow the prompt.
     per_source_chars = max(500, min(3000, MAX_CONTEXT_CHARS // max(1, len(timeline_sources))))
     timeline_lines = []
@@ -164,10 +152,13 @@ def ask_ai(
     # Sources of other topics: Claude picks the relevant ones (no shared tag needed); shared tags are the fallback.
     topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
     index = source_selection.build_index(db, topic_id, topic_tag_keys, access_service.accessible_topic_ids(db, user))
-    previous_questions = [m.content for m in chat.messages if m.role == "user"][-2:] if chat else []
-    related, _used_ai = source_selection.select_sources(
-        index, topic.name, topic.description, [*previous_questions, question]
-    )
+    if focus_key:
+        related = source_selection.tagged_sources(index, focus_tag)
+    else:
+        previous_questions = [m.content for m in chat.messages if m.role == "user"][-2:] if chat else []
+        related, _used_ai = source_selection.select_sources(
+            index, topic.name, topic.description, [*previous_questions, question]
+        )
     cross_lines = []
     for s in related:
         cross_lines.append(
@@ -183,11 +174,42 @@ def ask_ai(
         }
     cross_text = "\n\n".join(cross_lines)
 
+    return timeline_text, cross_text, context_sources
+
+
+@router.post("/{topic_id}/ask", response_model=schemas.AskResponse)
+def ask_ai(
+    topic_id: str,
+    question: str = Form(...),
+    chat_id: Optional[str] = Form(None),  # continue this chat; a new chat is created when omitted
+    tag: Optional[str] = Form(None),  # focus mode: only the sources with this tag
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db), user: models.Person = Depends(get_current_user),
+):
+    topic = get_topic_as(db, user, topic_id, "viewer")
+
+    attachment_name = attachment_text = None
+    if file is not None and file.filename:
+        attachment_name, attachment_text = _read_attachment(file)
+
+    chat = None
+    if chat_id:
+        chat = db.get(models.Chat, chat_id)
+        if not chat or chat.topic_id != topic_id or chat.created_by != user.id:
+            raise HTTPException(404, "השיחה לא נמצאה")
+
+    focus_tag = tag_utils.clean_tag(tag) if tag and tag.strip() else None
+    if focus_tag:
+        key = tag_utils.tag_key(focus_tag)
+        if not any(tag_utils.tag_key(st.tag.name) == key for s in topic.sources for st in s.tags):
+            raise HTTPException(400, "אין בנושא מקורות עם התגית הזו")
+    timeline_text, cross_text, context_sources = build_ask_context(db, user, topic, question, chat, focus_tag)
+
     history = _chat_history(chat) if chat else []
     try:
         answer = claude_service.ask_question(
             topic.name, topic.description, timeline_text, cross_text, question, history,
-            attachment_name, attachment_text,
+            attachment_name, attachment_text, focus_tag,
         )
     except claude_service.ClaudeNotConfiguredError as exc:
         raise HTTPException(400, str(exc))
@@ -207,6 +229,7 @@ def ask_ai(
             content=question,
             attachment_name=attachment_name,
             attachment_text=attachment_text,
+            context_tag=focus_tag,
             created_at=now,
         )
     )

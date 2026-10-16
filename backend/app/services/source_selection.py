@@ -45,6 +45,12 @@ def shared_tag_sources(index: list[dict]) -> list[models.Source]:
     return [entry["source"] for entry in index if entry["shared_tags"]]
 
 
+def tagged_sources(index: list[dict], tag_name: str) -> list[models.Source]:
+    """Focus mode: sources of the other accessible topics that carry this tag (no model call)."""
+    key = tag_utils.tag_key(tag_name)
+    return [e["source"] for e in index if any(tag_utils.tag_key(t) == key for t in e["tags"])][:MAX_SELECTED]
+
+
 def select_sources(
     index: list[dict],
     topic_name: str,

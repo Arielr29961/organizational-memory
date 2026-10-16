@@ -9,7 +9,7 @@ from .services import access_service, auth_service
 Base.metadata.create_all(bind=engine)
 ensure_columns(
     {
-        "chat_messages": {"attachment_name": "VARCHAR", "attachment_text": "TEXT"},
+        "chat_messages": {"attachment_name": "VARCHAR", "attachment_text": "TEXT", "context_tag": "VARCHAR"},
         "people": {"password_hash": "VARCHAR"},
         "topics": {"owner_id": "VARCHAR REFERENCES people(id)"},
         "chats": {"created_by": "VARCHAR REFERENCES people(id)"},

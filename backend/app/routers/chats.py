@@ -35,6 +35,7 @@ def get_chat(chat_id: str, db: Session = Depends(get_db), user: models.Person = 
                 "content": m.content,
                 "used_sources": json.loads(m.used_sources or "[]"),
                 "attachment_name": m.attachment_name,
+                "context_tag": m.context_tag,
                 "created_at": m.created_at,
             }
             for m in chat.messages

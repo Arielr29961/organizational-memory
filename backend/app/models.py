@@ -150,6 +150,7 @@ class ChatMessage(Base):
     used_sources = Column(Text, default="[]")  # JSON list of cited sources (assistant messages only)
     attachment_name = Column(String, nullable=True)  # file the user attached to this message (user messages only)
     attachment_text = Column(Text, nullable=True)  # text extracted from it; the file itself is not stored
+    context_tag = Column(String, nullable=True)  # tag the user was focusing on when asking (user messages only)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chat = relationship("Chat", back_populates="messages")
