@@ -680,6 +680,36 @@ select {
   }
 }
 
+.timeline-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.timeline-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.timeline-filters input,
+.timeline-filters select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+}
+
+.timeline-search {
+  flex: 1;
+  min-width: 180px;
+}
+
 .tag-suggest {
   display: flex;
   flex-wrap: wrap;

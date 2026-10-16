@@ -8,7 +8,7 @@ export default function TagsPanel({ topicTags, onChanged }) {
   const [selectedTag, setSelectedTag] = useState(null);
   const [tagSources, setTagSources] = useState([]);
   const [loadingSources, setLoadingSources] = useState(false);
-  const [cleanup, setCleanup] = useState({ duplicates: [], joined: [] });
+  const [cleanup, setCleanup] = useState({ duplicates: [], joined: [], unused: [] });
   const [cleanupError, setCleanupError] = useState("");
 
   useEffect(() => {
@@ -29,6 +29,12 @@ export default function TagsPanel({ topicTags, onChanged }) {
   function handleMerge(from, into) {
     if (!confirm(`למזג את #${from.name} לתוך #${into.name}? התגית #${from.name} תימחק וכל המקורות שלה יעברו לתגית #${into.name}.`)) return;
     runCleanup(() => api.mergeTag(from.id, into.id));
+  }
+
+  function handleDeleteUnused(tags) {
+    const label = tags.length === 1 ? `התגית #${tags[0].name}` : `${tags.length} תגיות שאינן בשימוש`;
+    if (!confirm(`למחוק את ${label}? אף מקור לא משתמש בהן. לא ניתן לבטל.`)) return;
+    runCleanup(() => api.deleteUnusedTags(tags.map((t) => t.id)));
   }
 
   function handleSplit(tag) {
@@ -64,10 +70,31 @@ export default function TagsPanel({ topicTags, onChanged }) {
       {allTags.length > 0 && (
         <details className="tags-cleanup">
           <summary>
-            ניקוי ומיזוג תגיות ({cleanup.duplicates.length} זוגות דומים, {cleanup.joined.length} תגיות משורשרות)
+            ניקוי ומיזוג תגיות ({cleanup.duplicates.length} זוגות דומים, {cleanup.joined.length} תגיות משורשרות,{" "}
+            {cleanup.unused.length} לא בשימוש)
           </summary>
           <p className="muted">התגיות משותפות לכל הנושאים. מיזוג מעביר את כל המקורות לתגית שנשארת, ולא ניתן לביטול.</p>
           {cleanupError && <div className="error-text">{cleanupError}</div>}
+
+          {cleanup.unused.length > 0 && (
+            <section>
+              <h4>תגיות שאינן בשימוש ({cleanup.unused.length})</h4>
+              <p className="muted">אף מקור לא מסומן בהן, למשל אחרי מחיקת מקורות או מיזוג. מחיקה לא משפיעה על מקורות.</p>
+              <div className="tags-row">
+                {cleanup.unused.map((tag) => (
+                  <span key={tag.id} className="tag-chip">
+                    #{tag.name}
+                    <button className="tag-remove" title="מחק תגית" onClick={() => handleDeleteUnused([tag])}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteUnused(cleanup.unused)}>
+                מחק את כל התגיות שאינן בשימוש
+              </button>
+            </section>
+          )}
 
           {cleanup.joined.length > 0 && (
             <section>
