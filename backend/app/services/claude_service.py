@@ -44,7 +44,9 @@ def _extract_json(text: str) -> Any:
     return json.loads(text)
 
 
-def _call(system: str, user_content: str, max_tokens: int = 2000, history: Optional[list[dict]] = None) -> str:
+def _call_with_stop(system: str, user_content: str, max_tokens: int = 2000, history: Optional[list[dict]] = None) -> tuple[str, Optional[str]]:
+    """(visible text, stop reason). The model thinks before it answers and those tokens count against max_tokens, so a
+    small limit can cut the visible answer off ('max_tokens')."""
     client = _get_client()
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
@@ -56,7 +58,25 @@ def _call(system: str, user_content: str, max_tokens: int = 2000, history: Optio
     for block in response.content:
         if getattr(block, "type", None) == "text":
             parts.append(block.text)
-    return "".join(parts)
+    return "".join(parts), getattr(response, "stop_reason", None)
+
+
+def _call(system: str, user_content: str, max_tokens: int = 2000, history: Optional[list[dict]] = None) -> str:
+    return _call_with_stop(system, user_content, max_tokens, history)[0]
+
+
+def _call_json(system: str, user_content: str, max_tokens: int = 4000) -> Any:
+    """Ask for a JSON answer. A malformed or cut-off answer is retried once (with a bigger limit if it was cut off)."""
+    truncated = False
+    for _attempt in range(2):
+        raw, stop = _call_with_stop(system, user_content, max_tokens)
+        truncated = stop == "max_tokens"
+        try:
+            return _extract_json(raw)
+        except json.JSONDecodeError:
+            if truncated:
+                max_tokens *= 2
+    raise ValueError("תשובת ה-AI נחתכה לפני שהסתיימה, נסו שוב" if truncated else "תשובת ה-AI לא הייתה בפורמט תקין, נסו שוב")
 
 
 def _system_with_topic_context(base_prompt: str, topic_name: str, topic_description: Optional[str]) -> str:
@@ -121,8 +141,7 @@ def analyze_source(
 הצע תגיות והחזר JSON לפי הפורמט שהוגדר.
 """
     system = _system_with_topic_context(ANALYZE_SYSTEM_PROMPT, topic_name, topic_description)
-    raw = _call(system, user_content, max_tokens=500)
-    return _extract_json(raw)
+    return _call_json(system, user_content, max_tokens=2000)
 
 
 ASK_SYSTEM_PROMPT = """\
@@ -188,7 +207,7 @@ def ask_question(
 {question}
 """
     system = _system_with_topic_context(ASK_SYSTEM_PROMPT, topic_name, topic_description)
-    return _call(system, user_content, max_tokens=3000, history=history)
+    return _call(system, user_content, max_tokens=6000, history=history)
 
 
 TAG_GROUPS_SYSTEM_PROMPT = """\
@@ -215,8 +234,7 @@ def suggest_tag_groups(tags: list[dict]) -> dict:
     lines = "\n".join(
         f"- {t['key']} | {t['name']} | {t['count']} מקורות | כותרות: {'; '.join(t['titles']) or '-'}" for t in tags
     )
-    raw = _call(TAG_GROUPS_SYSTEM_PROMPT, f"התגיות במערכת:\n{lines}\n\nהצע קבוצות למיזוג.", max_tokens=4000)
-    return _extract_json(raw)
+    return _call_json(TAG_GROUPS_SYSTEM_PROMPT, f"התגיות במערכת:\n{lines}\n\nהצע קבוצות למיזוג.", max_tokens=6000)
 
 
 SELECT_SOURCES_SYSTEM_PROMPT = """\
@@ -256,8 +274,7 @@ def select_related_sources(
 
 בחר את המקורות הרלוונטיים והחזר JSON.
 """
-    raw = _call(SELECT_SOURCES_SYSTEM_PROMPT, user_content, max_tokens=300)
-    return _extract_json(raw)
+    return _call_json(SELECT_SOURCES_SYSTEM_PROMPT, user_content, max_tokens=2000)
 
 
 INTAKE_SYSTEM_PROMPT = """\
@@ -318,5 +335,4 @@ def propose_intake(
 
 הכן את ההצעה והחזר JSON.
 """
-    raw = _call(INTAKE_SYSTEM_PROMPT, user_content, max_tokens=900)
-    return _extract_json(raw)
+    return _call_json(INTAKE_SYSTEM_PROMPT, user_content, max_tokens=4000)

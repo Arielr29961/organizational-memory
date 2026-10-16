@@ -156,6 +156,9 @@ export const api = {
     files.forEach((f) => fd.append("files", f));
     return apiFetch(`${BASE_URL}/api/intake/upload`, { method: "POST", body: fd }).then(handle);
   },
+  intakeFolder: () => apiFetch(`${BASE_URL}/api/intake/folder`).then(handle),
+  openIntakeFolder: () => apiFetch(`${BASE_URL}/api/intake/folder/open`, { method: "POST" }).then(handle),
+  scanIntakeFolder: () => apiFetch(`${BASE_URL}/api/intake/scan`, { method: "POST" }).then(handle),
   updateIntake: (id, data) =>
     apiFetch(`${BASE_URL}/api/intake/${id}`, {
       method: "PATCH",

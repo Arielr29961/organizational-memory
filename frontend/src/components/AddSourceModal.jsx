@@ -175,7 +175,7 @@ export default function AddSourceModal({ topicId, onClose, onCreated, initialTag
 
         <label>
           או צירוף קובץ (PDF, Word, Excel, CSV, טקסט)
-          <input type="file" accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.eml" onChange={(e) => setFile(e.target.files[0])} />
+          <input type="file" accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.eml,.msg,.pptx" onChange={(e) => setFile(e.target.files[0])} />
         </label>
 
         <label>

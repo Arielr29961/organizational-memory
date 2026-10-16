@@ -5,6 +5,7 @@ backend/**/__pycache__/
 backend/.env
 backend/data/*.db
 backend/uploads/*
+backend/inbox/
 !backend/uploads/.gitkeep
 
 # Node

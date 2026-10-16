@@ -1,9 +1,12 @@
 """Intake: imported files become proposals (topic, title, date, tags, participants) that the user approves."""
 import hashlib
+import contextlib
 import json
 import logging
 import re
 import shutil
+import sys
+import time
 import uuid
 from datetime import date as date_type
 from pathlib import Path
@@ -11,13 +14,13 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..config import UPLOAD_DIR
+from ..config import INBOX_DIR, UPLOAD_DIR
 from ..database import SessionLocal
 from . import access_service, claude_service, file_extraction, people_service, tag_service, tag_utils
 
 log = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".txt", ".md", ".eml"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".txt", ".md", ".eml", ".msg", ".pptx"}
 SOURCE_TYPES = {"meeting_transcript", "meeting_summary", "email", "presentation", "spreadsheet", "document", "other"}
 MAX_FILES_PER_BATCH = 50
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -46,14 +49,14 @@ def create_items(db: Session, user: models.Person, files: list[tuple[str, "objec
     for name, stream in files[:MAX_FILES_PER_BATCH]:
         ext = Path(name).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
-            skipped.append({"file_name": name, "reason": "סוג קובץ לא נתמך"})
+            skipped.append({"file_name": name, "code": "unsupported", "reason": "סוג קובץ לא נתמך"})
             continue
         dest = UPLOAD_DIR / f"intake-{uuid.uuid4()}{ext}"
         with dest.open("wb") as out:
             shutil.copyfileobj(stream, out)
         if dest.stat().st_size > MAX_FILE_BYTES:
             dest.unlink(missing_ok=True)
-            skipped.append({"file_name": name, "reason": "הקובץ גדול מדי (מעל 20MB)"})
+            skipped.append({"file_name": name, "code": "too_big", "reason": "הקובץ גדול מדי (מעל 20MB)"})
             continue
         digest = _sha256(dest)
         same = db.query(models.IntakeItem).filter(models.IntakeItem.owner_id == user.id, models.IntakeItem.file_hash == digest).first()
@@ -62,13 +65,13 @@ def create_items(db: Session, user: models.Person, files: list[tuple[str, "objec
             same = None
         if same:
             dest.unlink(missing_ok=True)
-            skipped.append({"file_name": name, "reason": "הקובץ כבר יובא או ממתין בתיבת ההצעות"})
+            skipped.append({"file_name": name, "code": "duplicate", "reason": "הקובץ כבר יובא או ממתין בתיבת ההצעות"})
             continue
         item = models.IntakeItem(owner_id=user.id, status="processing", file_name=name, file_path=str(dest), file_hash=digest)
         db.add(item)
         db.flush()  # the session does not autoflush: without this the same file twice in one batch is not noticed
         created.append(item)
-    skipped += [{"file_name": n, "reason": f"מעל {MAX_FILES_PER_BATCH} קבצים בהעלאה אחת"} for n, _ in files[MAX_FILES_PER_BATCH:]]
+    skipped += [{"file_name": n, "code": "over_limit", "reason": f"מעל {MAX_FILES_PER_BATCH} קבצים בהעלאה אחת"} for n, _ in files[MAX_FILES_PER_BATCH:]]
     db.commit()
     return created, skipped
 
@@ -111,6 +114,8 @@ def _known_tags(db: Session, user: models.Person) -> list[str]:
 def _person_pairs(candidates: list[tuple[str, str]], db: Session, notes: list[str]) -> list[dict]:
     """(display name, e-mail) -> participants. A known address uses the stored name; a new one needs a real name."""
     result, seen = [], set()
+    # an address that comes with a real name wins over a nameless copy of the same address
+    candidates = sorted(candidates, key=lambda c: not ((c[0] or "").strip() and (c[0] or "").strip().lower() != (c[1] or "").strip().lower()))
     for name, email in candidates:
         email = people_service.normalize_email(email)
         if not people_service.EMAIL_RE.match(email) or email in seen:
@@ -150,8 +155,8 @@ def _process(db: Session, item: models.IntakeItem) -> None:
     ext = path.suffix.lower()
 
     mail = None
-    if ext == ".eml":
-        mail = file_extraction.parse_eml(path)
+    if ext in file_extraction.MAIL_EXTENSIONS:
+        mail = file_extraction.parse_mail(path)
         text = file_extraction.eml_to_text(mail)
     else:
         text = file_extraction.extract_text(path, item.file_name)
@@ -204,14 +209,16 @@ def _apply_proposal(db: Session, item: models.IntakeItem, raw: dict, entries: li
     item.tags = json.dumps(tag_utils.filter_ai_tags(raw.get("tags") or [], chosen["name"] if chosen else ""), ensure_ascii=False)
 
     notes: list[str] = []
-    if mail:
-        candidates = mail["from"] + mail["to"] + mail["cc"]
-    else:
-        lowered = text.lower()
-        candidates = []
-        for p in raw.get("participants") or []:
-            if isinstance(p, dict) and isinstance(p.get("email"), str) and p["email"].strip().lower() in lowered:
-                candidates.append((str(p.get("name") or ""), p["email"]))
+    # Header people first (mail files), then people the model found whose address literally appears in the text -
+    # for a mail that includes the senders of quoted/forwarded messages in the body.
+    candidates = (mail["from"] + mail["to"] + mail["cc"]) if mail else []
+    lowered = text.lower()
+    for p in raw.get("participants") or []:
+        if isinstance(p, dict) and isinstance(p.get("email"), str) and p["email"].strip().lower() in lowered:
+            name = str(p.get("name") or "").strip()
+            if name.lower() not in lowered:
+                name = ""  # a name the model made up (e.g. from the address) is not a name found in the file
+            candidates.append((name, p["email"]))
     item.participants = json.dumps(_person_pairs(candidates, db, notes), ensure_ascii=False)
     if mail and mail["attachments"]:
         notes.append("קבצים מצורפים למייל לא נקראו: " + ", ".join(mail["attachments"]))
@@ -278,3 +285,69 @@ def delete_item(db: Session, item: models.IntakeItem) -> None:
     if item.status != "approved":
         Path(item.file_path).unlink(missing_ok=True)
     db.delete(item)
+
+
+# ---------- the "drop here" folder (one per user; a scan is the only trigger)
+
+def user_folder(user: models.Person) -> Path:
+    safe = re.sub(r"[^a-z0-9@._+-]", "_", user.email.lower())
+    folder = INBOX_DIR / safe
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _folder_files(folder: Path) -> tuple[list[Path], list[str]]:
+    """(supported files waiting, names of files that are ignored). Sub-folders, temp files and hidden files are not scanned."""
+    waiting, ignored = [], []
+    for p in sorted((x for x in folder.iterdir() if x.is_file()), key=lambda x: x.stat().st_mtime):
+        if p.name.startswith(("~$", ".")):
+            continue
+        if p.suffix.lower() in ALLOWED_EXTENSIONS:
+            waiting.append(p)
+        else:
+            ignored.append(p.name)
+    return waiting, ignored
+
+
+def folder_status(user: models.Person) -> dict:
+    folder = user_folder(user)
+    waiting, ignored = _folder_files(folder)
+    return {"path": str(folder), "waiting": len(waiting), "ignored": ignored}
+
+
+def open_folder(user: models.Person) -> None:
+    """Opens the user's drop folder in the file manager of the machine that runs the backend (a local POC convenience)."""
+    import os
+    import subprocess
+
+    folder = str(user_folder(user))
+    if sys.platform == "win32":
+        os.startfile(folder)  # noqa: S606 - a path the app created itself
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", folder])
+    else:
+        subprocess.Popen(["xdg-open", folder])
+
+
+def scan_folder(db: Session, user: models.Person) -> tuple[list[models.IntakeItem], list[dict], dict]:
+    """Takes up to MAX_FILES_PER_BATCH files of the user's folder into the inbox. Files that were taken in (or already
+    imported) move to processed/; unsupported, oversized and surplus files stay where they are."""
+    folder = user_folder(user)
+    waiting, _ignored = _folder_files(folder)
+    batch = waiting[:MAX_FILES_PER_BATCH]
+    with contextlib.ExitStack() as stack:
+        streams = [(p.name, stack.enter_context(p.open("rb"))) for p in batch]
+        created, skipped = create_items(db, user, streams)
+
+    done = {i.file_name for i in created} | {s["file_name"] for s in skipped if s["code"] == "duplicate"}
+    processed = folder / "processed"
+    not_moved = []
+    for p in batch:
+        if p.name not in done:
+            continue
+        try:
+            processed.mkdir(exist_ok=True)
+            shutil.move(str(p), str(processed / f"{time.strftime('%Y%m%d-%H%M%S')}-{p.name}"))
+        except OSError:  # e.g. the file is open in another program
+            not_moved.append(p.name)
+    return created, skipped, {"remaining": len(waiting) - len(batch), "not_moved": not_moved}

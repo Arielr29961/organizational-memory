@@ -10,8 +10,11 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = BASE_DIR / "uploads"
+# Each user's "drop here" folder lives under INBOX_DIR/<e-mail>/ (files that were taken in move to processed/)
+INBOX_DIR = BASE_DIR / "inbox"
 DATA_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
+INBOX_DIR.mkdir(exist_ok=True)
 
 # Topics that existed before accounts were introduced belong to this person (they claim them by registering).
 DEFAULT_OWNER_EMAIL = os.getenv("DEFAULT_OWNER_EMAIL", "ariel29961@gmail.com")

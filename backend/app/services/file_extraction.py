@@ -5,6 +5,8 @@ from datetime import date as date_type
 from html.parser import HTMLParser
 from pathlib import Path
 
+MAIL_EXTENSIONS = (".eml", ".msg")
+
 
 def extract_text(file_path: Path, original_name: str) -> str:
     suffix = Path(original_name).suffix.lower()
@@ -20,8 +22,10 @@ def extract_text(file_path: Path, original_name: str) -> str:
             return _extract_csv(file_path)
         if suffix in (".txt", ".md"):
             return file_path.read_text(encoding="utf-8", errors="ignore")
-        if suffix == ".eml":
-            return eml_to_text(parse_eml(file_path))
+        if suffix in MAIL_EXTENSIONS:
+            return eml_to_text(parse_mail(file_path))
+        if suffix == ".pptx":
+            return _extract_pptx(file_path)
     except Exception as exc:
         return f"[שגיאה בחילוץ טקסט אוטומטי מהקובץ: {exc}]"
 
@@ -157,3 +161,79 @@ def eml_to_text(mail: dict) -> str:
     if mail["attachments"]:
         lines.append("קבצים מצורפים (לא נקראו): " + ", ".join(mail["attachments"]))
     return "\n".join(lines) + "\n\n" + mail["body"]
+
+
+def parse_mail(file_path: Path) -> dict:
+    """An .eml or Outlook .msg file as {subject, date, from, to, cc, body, attachments}."""
+    return parse_msg(file_path) if file_path.suffix.lower() == ".msg" else parse_eml(file_path)
+
+
+def _split_address(value: str) -> tuple[str, str]:
+    from email.utils import parseaddr
+
+    name, addr = parseaddr(value or "")
+    return (name or "").strip(), (addr or "").strip()
+
+
+def parse_msg(file_path: Path) -> dict:
+    """An Outlook .msg file, in the same shape as parse_eml. Recipients without an SMTP address are left out
+    (Exchange-internal addresses are not usable as an e-mail address)."""
+    import extract_msg
+
+    msg = extract_msg.openMsg(str(file_path))
+    try:
+        sender = []
+        if msg.sender:
+            name, addr = _split_address(str(msg.sender))
+            if addr:
+                sender.append((name, addr))
+        to, cc = [], []
+        for r in msg.recipients or []:
+            addr = (getattr(r, "smtpAddress", None) or getattr(r, "email", None) or "").strip()
+            if not addr or "@" not in addr:
+                continue
+            name = (getattr(r, "name", None) or "").strip()
+            kind = str(getattr(getattr(r, "type", None), "name", getattr(r, "type", ""))).lower()
+            (cc if "cc" in kind and "bcc" not in kind else to).append((name, addr))
+        sent = msg.date
+        body = (msg.body or "").strip()
+        if not body and msg.htmlBody:
+            html = msg.htmlBody.decode("utf-8", errors="ignore") if isinstance(msg.htmlBody, (bytes, bytearray)) else str(msg.htmlBody)
+            body = _html_to_text(html)
+        attachments = []
+        for a in msg.attachments or []:
+            attachments.append(getattr(a, "longFilename", None) or getattr(a, "shortFilename", None) or "(ללא שם)")
+        return {
+            "subject": str(msg.subject or "").strip(),
+            "date": sent.date() if hasattr(sent, "date") else None,
+            "from": sender,
+            "to": to,
+            "cc": cc,
+            "body": body,
+            "attachments": attachments,
+        }
+    finally:
+        msg.close()
+
+
+def _extract_pptx(file_path: Path) -> str:
+    from pptx import Presentation
+
+    parts = []
+    for i, slide in enumerate(Presentation(str(file_path)).slides, start=1):
+        lines = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                lines += [p.text.strip() for p in shape.text_frame.paragraphs if p.text.strip()]
+            if getattr(shape, "has_table", False) and shape.has_table:
+                for row in shape.table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        lines.append(" | ".join(cells))
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+            notes = slide.notes_slide.notes_text_frame.text.strip()
+            if notes:
+                lines.append(f"[הערות מרצה] {notes}")
+        if lines:
+            parts.append(f"--- שקף {i} ---\n" + "\n".join(lines))
+    return "\n\n".join(parts)
