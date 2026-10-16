@@ -4,10 +4,13 @@ import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import TopicView from "./components/TopicView";
 import AddTopicModal from "./components/AddTopicModal";
+import IntakeInbox from "./components/IntakeInbox";
 
 function Workspace({ user, onLogout }) {
   const [topics, setTopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
+  const [view, setView] = useState("topics"); // "topics" | "intake"
+  const [intakeCount, setIntakeCount] = useState(0);
   const [focusSource, setFocusSource] = useState(null);
   const [search, setSearch] = useState("");
   const [showAddTopic, setShowAddTopic] = useState(false);
@@ -25,6 +28,11 @@ function Workspace({ user, onLogout }) {
     }
   }
 
+  // The badge on the inbox button: proposals still open
+  useEffect(() => {
+    api.listIntake().then((l) => setIntakeCount(l.length)).catch(() => {});
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     refreshTopics().finally(() => setLoading(false));
@@ -36,11 +44,13 @@ function Workspace({ user, onLogout }) {
     setShowAddTopic(false);
     await refreshTopics();
     setSelectedTopicId(topic.id);
+    setView("topics");
   }
 
   // Jump to a source's card in its topic's timeline (a new object each time so repeated clicks re-trigger).
   function handleOpenSource(topicId, sourceId) {
     setSelectedTopicId(topicId);
+    setView("topics");
     setFocusSource({ topicId, sourceId });
   }
 
@@ -54,7 +64,13 @@ function Workspace({ user, onLogout }) {
       <Sidebar
         topics={topics}
         selectedTopicId={selectedTopicId}
-        onSelect={setSelectedTopicId}
+        onSelect={(id) => {
+          setSelectedTopicId(id);
+          setView("topics");
+        }}
+        intakeCount={intakeCount}
+        intakeActive={view === "intake"}
+        onOpenIntake={() => setView("intake")}
         search={search}
         onSearchChange={setSearch}
         onAddTopic={() => setShowAddTopic(true)}
@@ -64,7 +80,9 @@ function Workspace({ user, onLogout }) {
         onLogout={onLogout}
       />
       <main className="main-area">
-        {selectedTopicId ? (
+        {view === "intake" ? (
+          <IntakeInbox onCountChange={setIntakeCount} onSourcesAdded={refreshTopics} />
+        ) : selectedTopicId ? (
           <TopicView
             topicId={selectedTopicId}
             onTopicChanged={refreshTopics}

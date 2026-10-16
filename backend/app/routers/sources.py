@@ -21,39 +21,6 @@ from ..services.tag_service import add_tag_to_source, delete_if_unused
 router = APIRouter(tags=["sources"])
 
 
-# Safety net behind the prompt rules: AI tags that are too generic to link sources meaningfully.
-GENERIC_TAGS = {
-    "חוב", "חובות", "תיקים", "תיק", "kpi", "נתונים", "מידע", "דוח", "דו\"ח", "דוחות", "ניהול", "בעיה", "בעיות",
-    "שיפור", "ביצועים", "תהליך", "תהליכים", "עדכון", "סיכום", "ניתוח", "תוצאות", "נושא", "משימות", "החלטות",
-    "פגישה", "פגישות", "מייל", "מסמך", "מצגת", "טבלה", "שנה", "חודש", "רבעון", "כללי", "אחר",
-}
-MAX_AI_TAGS = 5
-
-
-def _filter_ai_tags(tags: list, topic_name: str = "") -> list[str]:
-    """Drop generic/low-value AI tags, dedupe, and cap the count."""
-    seen = set()
-    kept = []
-    for raw in tags:
-        if not isinstance(raw, str):
-            continue
-        t = raw.strip().lstrip("#").strip()
-        key = t.lower()
-        if (
-            len(t) < 2
-            or len(t) > 40
-            or len(t.split()) > 4
-            or key in seen
-            or key in GENERIC_TAGS
-            or key == topic_name.strip().lower()
-            or re.fullmatch(r"[\d\s./\-_,:]+", t)  # numbers, years, dates
-        ):
-            continue
-        seen.add(key)
-        kept.append(t)
-    return kept[:MAX_AI_TAGS]
-
-
 @router.get("/api/topics/{topic_id}/sources", response_model=list[schemas.SourceOut])
 def list_sources(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     topic = get_topic_as(db, user, topic_id, "viewer")
@@ -265,7 +232,7 @@ def analyze_source(source_id: str, db: Session = Depends(get_db), user: models.P
     except Exception as exc:
         raise HTTPException(502, f"שגיאה בניתוח ה-AI: {exc}")
 
-    suggested_tags = _filter_ai_tags(result.get("suggested_tags", []) or [], topic.name)
+    suggested_tags = tag_utils.filter_ai_tags(result.get("suggested_tags", []) or [], topic.name)
     for t in suggested_tags:
         add_tag_to_source(db, source, t, "ai")
     db.commit()

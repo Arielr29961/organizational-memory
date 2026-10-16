@@ -122,6 +122,34 @@ class SourceTag(Base):
     tag = relationship("Tag", back_populates="sources")
 
 
+class IntakeItem(Base):
+    """An imported file waiting for the user's approval; approving it creates a regular Source."""
+
+    __tablename__ = "intake_items"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    owner_id = Column(String, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, nullable=False, default="processing")  # processing, pending, error, approved
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_hash = Column(String, nullable=False)
+    topic_id = Column(String, ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)  # proposed existing topic
+    new_topic_name = Column(String, nullable=True)  # proposed new topic (created only when the item is approved)
+    title = Column(String, default="")
+    date = Column(Date, nullable=True)
+    source_type = Column(String, default="document")
+    description = Column(Text, default="")
+    content = Column(Text, default="")
+    tags = Column(Text, default="[]")  # JSON list of names
+    participants = Column(Text, default="[]")  # JSON list of {"email", "name"}
+    notes = Column(Text, default="[]")  # JSON list of things the AI could not resolve (e.g. people without an address)
+    reason = Column(Text, default="")
+    confidence = Column(String, default="low")  # high, medium, low
+    error = Column(Text, nullable=True)
+    source_id = Column(String, nullable=True)  # the source created on approval
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Chat(Base):
     """A saved Ask-AI conversation about one topic."""
 
