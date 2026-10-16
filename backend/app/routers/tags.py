@@ -14,6 +14,10 @@ class TagMerge(BaseModel):
     into_id: str
 
 
+class TagIds(BaseModel):
+    tag_ids: list[str]
+
+
 class TagGroupMerge(BaseModel):
     keep_id: str
     merge_ids: list[str]
@@ -34,12 +38,21 @@ def similar_tags(name: str, limit: int = 5, db: Session = Depends(get_db)):
 def cleanup_candidates(db: Session = Depends(get_db)):
     """Probable duplicate pairs, and tags that are really several tags joined together."""
     tags = tag_service.tags_with_counts(db)
-    joined = [t for t in tags if tag_utils.has_separator(t["name"])]
-    single = [t for t in tags if not tag_utils.has_separator(t["name"])]  # joined tags are handled by splitting
+    unused = [t for t in tags if t["count"] == 0]
+    used = [t for t in tags if t["count"] > 0]
+    joined = [t for t in used if tag_utils.has_separator(t["name"])]
+    single = [t for t in used if not tag_utils.has_separator(t["name"])]  # joined tags are handled by splitting
     return {
         "duplicates": [{"a": a, "b": b, "score": score} for a, b, score in tag_utils.find_duplicate_pairs(single)],
         "joined": joined,
+        "unused": unused,
     }
+
+
+@router.post("/delete-unused")
+def delete_unused(payload: TagIds, db: Session = Depends(get_db)):
+    """Delete tags that no source uses. Tags that are in use are skipped."""
+    return tag_service.delete_unused_tags(db, payload.tag_ids)
 
 
 @router.post("/synonyms")

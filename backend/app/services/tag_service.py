@@ -83,6 +83,10 @@ def split_tag(db: Session, tag_id: str) -> dict:
     names = tag_utils.split_tag_input(tag.name)
     if len(names) < 2:
         raise ValueError("התגית אינה מורכבת מכמה תגיות")
+    if not tag.sources:  # nothing to redistribute: splitting would only create new unused tags
+        db.delete(tag)
+        db.commit()
+        return {"split": tag_id, "into": []}
     targets = [get_or_create_tag(db, n) for n in names]
     targets = [t for t in targets if t.id != tag.id]
     for link in list(tag.sources):
@@ -164,3 +168,17 @@ def merge_group(db: Session, keep_id: str, merge_ids: list[str]) -> dict:
     for tag_id in merge_ids:
         moved += merge_tags(db, tag_id, keep_id)["sources_moved"]
     return {"kept": keep_id, "merged": merge_ids, "sources_moved": moved}
+
+
+def delete_unused_tags(db: Session, tag_ids: list[str]) -> dict:
+    """Delete the given tags, but only those that really have no sources (re-checked here, not trusted from the UI)."""
+    deleted, skipped = 0, 0
+    for tag_id in tag_ids:
+        tag = db.get(models.Tag, tag_id)
+        if tag and not tag.sources:
+            db.delete(tag)
+            deleted += 1
+        else:
+            skipped += 1
+    db.commit()
+    return {"deleted": deleted, "skipped": skipped}

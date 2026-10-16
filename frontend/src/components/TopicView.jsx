@@ -13,6 +13,8 @@ const TABS = [
   { key: "ask", label: "שאל את ה-AI" },
 ];
 
+const EMPTY_FILTERS = { query: "", mode: "range", from: "", to: "" };
+
 export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, focusSource, onOpenSource }) {
   const [topic, setTopic] = useState(null);
   const [sources, setSources] = useState([]);
@@ -22,6 +24,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
+  const [searchFilters, setSearchFilters] = useState(EMPTY_FILTERS);
   const [highlightId, setHighlightId] = useState(null);
   const handledFocus = useRef(null);
   // The open Ask-AI chat per topic, kept here so it survives tab and topic switches (undefined = not chosen yet).
@@ -43,6 +46,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
   useEffect(() => {
     setActiveTab("timeline");
     setTagFilter(null);
+    setSearchFilters(EMPTY_FILTERS);
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
@@ -53,6 +57,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
     handledFocus.current = focusSource;
     setActiveTab("timeline");
     setTagFilter(null);
+    setSearchFilters(EMPTY_FILTERS); // the target card must not be hidden by a search or date filter
     // Wait a tick so the timeline tab has rendered the card.
     setTimeout(() => {
       document.getElementById(`source-${focusSource.sourceId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -162,6 +167,8 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             sources={sources}
             tagFilter={tagFilter}
             onClearFilter={() => setTagFilter(null)}
+            filters={searchFilters}
+            onFiltersChange={setSearchFilters}
             onMutated={handleSourceMutated}
             highlightId={highlightId}
           />
