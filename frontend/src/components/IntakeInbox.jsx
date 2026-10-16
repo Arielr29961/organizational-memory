@@ -3,7 +3,7 @@ import { api, SOURCE_TYPES } from "../api";
 import ParticipantsInput from "./ParticipantsInput";
 
 const CONFIDENCE = { high: "גבוה", medium: "בינוני", low: "נמוך" };
-const ACCEPT = ".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.eml";
+const ACCEPT = ".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.eml,.msg,.pptx";
 
 // What the user changed in a row and has not saved yet; merged over the server's proposal.
 function rowOf(item, draft = {}) {
@@ -46,6 +46,8 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [folder, setFolder] = useState(null);
+  const [scanning, setScanning] = useState(false);
   const [newTag, setNewTag] = useState("");
   const fileInput = useRef(null);
 
@@ -73,6 +75,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
       .listTopics()
       .then((all) => setTopics(all.filter((t) => t.role === "owner" || t.role === "editor")))
       .catch(() => setTopics([]));
+    api.intakeFolder().then(setFolder).catch(() => setFolder(null));
   }, [onCountChange]);
 
   // Files are processed in the background: check again until none is still being read
@@ -100,6 +103,35 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
       setError(e.message);
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function scanFolder() {
+    setScanning(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api.scanIntakeFolder();
+      const notes = [
+        ...res.skipped.map((s) => `${s.file_name}: ${s.reason}`),
+        ...res.not_moved.map((n) => `${n}: לא הועבר (אולי פתוח בתוכנה אחרת)`),
+        ...(res.remaining ? [`${res.remaining} קבצים נוספים נשארו בתיקייה לסריקה הבאה`] : []),
+      ];
+      setMessage(`${res.created} קבצים נקלטו מהתיקייה ומעובדים${notes.length ? `. ${notes.join("; ")}` : ""}`);
+      await load();
+      api.intakeFolder().then(setFolder).catch(() => {});
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function openFolder() {
+    try {
+      await api.openIntakeFolder();
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -340,9 +372,33 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
     <div className="intake">
       <h2>תיבת הצעות</h2>
       <p className="muted">
-        העלו קבצים (PDF, Word, Excel, CSV, טקסט, מייל .eml). ה-AI יציע לאיזה נושא כל קובץ שייך ויכין את פרטי המקור, ורק אחרי האישור שלכם ייווצר מקור.
+        העלו קבצים (PDF, Word, Excel, PowerPoint, CSV, טקסט, מייל .eml או .msg) או זרקו אותם לתיקייה שלכם וסרקו. ה-AI יציע לאיזה נושא כל קובץ שייך ויכין את פרטי המקור, ורק אחרי האישור שלכם ייווצר מקור.
         תוכן הקבצים נשלח ל-Anthropic לצורך הניתוח. עד 50 קבצים בהעלאה.
       </p>
+
+      {folder && (
+        <div className="intake-folder">
+          <div>
+            <strong>📂 תיקיית "זרוק לכאן"</strong>{" "}
+            <span className="muted">
+              {folder.waiting} קבצים ממתינים
+              {folder.ignored.length > 0 && ` · לא נתמכים (יישארו בתיקייה): ${folder.ignored.join(", ")}`}
+            </span>
+          </div>
+          <code dir="ltr" className="intake-folder-path">
+            {folder.path}
+          </code>
+          <div>
+            <button type="button" className="btn btn-primary" disabled={scanning || folder.waiting === 0} onClick={scanFolder}>
+              {scanning ? "סורק..." : "🔍 סרוק עכשיו"}
+            </button>{" "}
+            <button type="button" className="btn" onClick={openFolder}>
+              פתח תיקייה
+            </button>
+            <span className="muted"> קבצים שנקלטו עוברים לתיקיית processed. נסרקים עד 50 קבצים בכל פעם.</span>
+          </div>
+        </div>
+      )}
 
       <div
         className={`intake-drop ${dragging ? "intake-drop-active" : ""}`}

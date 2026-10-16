@@ -87,6 +87,30 @@ def upload(
     return {"created": len(created), "skipped": skipped}
 
 
+@router.get("/folder")
+def folder(user: models.Person = Depends(get_current_user)):
+    """The user's drop folder: where it is and how many supported files wait in it."""
+    return intake_service.folder_status(user)
+
+
+@router.post("/folder/open")
+def folder_open(user: models.Person = Depends(get_current_user)):
+    try:
+        intake_service.open_folder(user)
+    except OSError as exc:
+        raise HTTPException(500, f"לא ניתן לפתוח את התיקייה: {exc}")
+    return {"ok": True}
+
+
+@router.post("/scan")
+def scan(background: BackgroundTasks, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """'Scan now': take the files waiting in the user's drop folder into the inbox."""
+    created, skipped, info = intake_service.scan_folder(db, user)
+    if created:
+        background.add_task(intake_service.process_items, [i.id for i in created])
+    return {"created": len(created), "skipped": skipped, **info}
+
+
 @router.patch("/{item_id}")
 def update_item(item_id: str, payload: IntakeUpdate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     item = _own_item(db, user, item_id)
