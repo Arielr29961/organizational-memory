@@ -13,6 +13,7 @@ ensure_columns(
         "people": {"password_hash": "VARCHAR"},
         "topics": {"owner_id": "VARCHAR REFERENCES people(id)"},
         "chats": {"created_by": "VARCHAR REFERENCES people(id)"},
+        "sources": {"edited_at": "DATETIME", "edited_by": "VARCHAR REFERENCES people(id)"},
     }
 )
 auth_service.assign_orphan_topics()
