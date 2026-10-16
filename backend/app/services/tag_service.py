@@ -33,6 +33,18 @@ def add_tag_to_source(db: Session, source: models.Source, raw_name: str, origin:
             db.add(models.SourceTag(source_id=source.id, tag_id=tag.id, origin=origin))
 
 
+def delete_if_unused(db: Session, tag_ids) -> int:
+    """Delete these tags if no source uses them any more (tags are shared by all topics, so they would linger)."""
+    deleted = 0
+    for tag_id in set(tag_ids):
+        tag = db.get(models.Tag, tag_id)
+        if tag and not tag.sources:
+            db.delete(tag)
+            deleted += 1
+    db.commit()
+    return deleted
+
+
 def tags_with_counts(db: Session) -> list[dict]:
     tags = db.query(models.Tag).all()
     results = [{"id": t.id, "name": t.name, "count": len(t.sources)} for t in tags]

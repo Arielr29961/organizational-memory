@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import Timeline from "./Timeline";
 import TagsPanel from "./TagsPanel";
-import InsightsPanel from "./InsightsPanel";
 import AskAI from "./AskAI";
 import AddSourceModal from "./AddSourceModal";
 
 const TABS = [
   { key: "timeline", label: "ציר זמן ומקורות" },
   { key: "tags", label: "תגיות" },
-  { key: "insights", label: "תובנות AI" },
   { key: "ask", label: "שאל את ה-AI" },
 ];
 
@@ -174,7 +172,6 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
           />
         )}
         {activeTab === "tags" && <TagsPanel topicTags={topic.tags} onChanged={handleSourceMutated} />}
-        {activeTab === "insights" && <InsightsPanel topicId={topicId} sources={sources} />}
         {activeTab === "ask" && (
           <AskAI
             topicId={topicId}

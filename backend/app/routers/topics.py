@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..serializers import topic_to_out
-from ..services import claude_service, file_extraction, tag_utils
+from ..services import claude_service, file_extraction, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -61,63 +61,11 @@ def delete_topic(topic_id: str, db: Session = Depends(get_db)):
     topic = db.get(models.Topic, topic_id)
     if not topic:
         raise HTTPException(404, "הנושא לא נמצא")
+    tag_ids = {st.tag_id for source in topic.sources for st in source.tags}
     db.delete(topic)
     db.commit()
+    tag_service.delete_if_unused(db, tag_ids)
     return {"ok": True}
-
-
-@router.get("/{topic_id}/insights", response_model=list[schemas.InsightOut])
-def topic_insights(topic_id: str, db: Session = Depends(get_db)):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
-    results = []
-    for source in sorted(topic.sources, key=lambda s: s.date):
-        for insight in source.insights:
-            results.append({
-                "id": insight.id,
-                "source_id": source.id,
-                "insight_type": insight.insight_type,
-                "content": insight.content,
-                "source_title": source.title,
-                "source_date": source.date,
-            })
-    return results
-
-
-@router.get("/{topic_id}/connections", response_model=list[schemas.ConnectionOut])
-def topic_connections(topic_id: str, db: Session = Depends(get_db)):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
-    source_ids = {s.id for s in topic.sources}
-    sources_by_id = {s.id: s for s in topic.sources}
-    results = []
-    seen = set()
-    connections = (
-        db.query(models.Connection)
-        .filter(models.Connection.source_id.in_(source_ids))
-        .all()
-    )
-    for conn in connections:
-        key = tuple(sorted([conn.source_id, conn.related_source_id])) + (conn.description,)
-        if key in seen:
-            continue
-        seen.add(key)
-        related = db.get(models.Source, conn.related_source_id)
-        src = sources_by_id.get(conn.source_id)
-        results.append({
-            "id": conn.id,
-            "source_id": conn.source_id,
-            "related_source_id": conn.related_source_id,
-            "description": conn.description,
-            "shared_tags": conn.shared_tags or "",
-            "source_title": src.title if src else None,
-            "related_title": related.title if related else None,
-            "related_topic_name": related.topic.name if related else None,
-            "related_topic_id": related.topic_id if related else None,
-        })
-    return results
 
 
 CITATION_RE = re.compile(r"\[\[\s*(?:id:\s*)?([0-9a-fA-F-]{36})\s*\]\]")

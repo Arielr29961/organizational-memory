@@ -72,36 +72,10 @@ class SourceUpdate(BaseModel):
     description: Optional[str] = None
 
 
-# ---------- Insights ----------
-
-class InsightOut(BaseModel):
-    id: str
-    source_id: str
-    insight_type: str
-    content: str
-    source_title: Optional[str] = None
-    source_date: Optional[date] = None
-
-    class Config:
-        from_attributes = True
-
-
-class ConnectionOut(BaseModel):
-    id: str
-    source_id: str
-    related_source_id: str
-    description: str
-    shared_tags: str
-    source_title: Optional[str] = None
-    related_title: Optional[str] = None
-    related_topic_name: Optional[str] = None
-    related_topic_id: Optional[str] = None
-
+# ---------- AI analysis ----------
 
 class AnalyzeResult(BaseModel):
     suggested_tags: List[TagOut] = []
-    insights: List[InsightOut] = []
-    connections: List[ConnectionOut] = []
 
 
 # ---------- Ask AI ----------

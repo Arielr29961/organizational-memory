@@ -15,7 +15,7 @@ from ..config import UPLOAD_DIR
 from ..database import get_db
 from ..serializers import source_to_out
 from ..services import claude_service, file_extraction, tag_utils
-from ..services.tag_service import add_tag_to_source
+from ..services.tag_service import add_tag_to_source, delete_if_unused
 
 router = APIRouter(tags=["sources"])
 
@@ -155,8 +155,10 @@ def delete_source(source_id: str, db: Session = Depends(get_db)):
             Path(source.file_path).unlink(missing_ok=True)
         except Exception:
             pass
+    tag_ids = {st.tag_id for st in source.tags}
     db.delete(source)
     db.commit()
+    delete_if_unused(db, tag_ids)
     return {"ok": True}
 
 
@@ -187,6 +189,7 @@ def remove_tag(source_id: str, tag_id: str, db: Session = Depends(get_db)):
     if link:
         db.delete(link)
         db.commit()
+        delete_if_unused(db, [tag_id])
     db.refresh(source)
     return source_to_out(source)
 
@@ -199,25 +202,6 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
     topic = source.topic
 
     existing_tags = [st.tag.name for st in source.tags]
-
-    candidates = (
-        db.query(models.Source)
-        .filter(models.Source.id != source.id)
-        .order_by(models.Source.date.desc())
-        .limit(40)
-        .all()
-    )
-    candidate_payload = [
-        {
-            "id": c.id,
-            "topic_name": c.topic.name,
-            "title": c.title,
-            "date": str(c.date),
-            "tags": [st.tag.name for st in c.tags],
-            "snippet": (c.content or "")[:400],
-        }
-        for c in candidates
-    ]
 
     known_tags = [
         name
@@ -240,7 +224,6 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
             str(source.date),
             source.content or "",
             existing_tags,
-            candidate_payload,
             known_tags,
         )
     except claude_service.ClaudeNotConfiguredError as exc:
@@ -251,41 +234,6 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
     suggested_tags = _filter_ai_tags(result.get("suggested_tags", []) or [], topic.name)
     for t in suggested_tags:
         add_tag_to_source(db, source, t, "ai")
-
-    db.query(models.Insight).filter(models.Insight.source_id == source.id).delete()
-    insight_map = {
-        "facts": "fact",
-        "decisions": "decision",
-        "hypotheses": "hypothesis",
-        "open_questions": "open_question",
-        "action_items": "action_item",
-    }
-    created_insights = []
-    for json_key, insight_type in insight_map.items():
-        for item in result.get(json_key, []) or []:
-            insight = models.Insight(source_id=source.id, insight_type=insight_type, content=item)
-            db.add(insight)
-            created_insights.append(insight)
-
-    db.query(models.Connection).filter(models.Connection.source_id == source.id).delete()
-    created_connections = []
-    candidates_by_id = {c.id: c for c in candidates}
-    for conn in result.get("connections", []) or []:
-        related_id = conn.get("source_id")
-        related = candidates_by_id.get(related_id)
-        if not related:
-            continue
-        my_keys = {tag_utils.tag_key(n) for n in [*existing_tags, *suggested_tags]}
-        shared = {st.tag.name for st in related.tags if tag_utils.tag_key(st.tag.name) in my_keys}
-        c = models.Connection(
-            source_id=source.id,
-            related_source_id=related_id,
-            description=conn.get("description", ""),
-            shared_tags=", ".join(sorted(shared)),
-        )
-        db.add(c)
-        created_connections.append(c)
-
     db.commit()
     db.refresh(source)
 
@@ -293,30 +241,5 @@ def analyze_source(source_id: str, db: Session = Depends(get_db)):
     return {
         "suggested_tags": [
             t for t in source_to_out(source)["tags"] if t["origin"] == "ai" and tag_utils.tag_key(t["name"]) in suggested_keys
-        ],
-        "insights": [
-            {
-                "id": i.id,
-                "source_id": source.id,
-                "insight_type": i.insight_type,
-                "content": i.content,
-                "source_title": source.title,
-                "source_date": source.date,
-            }
-            for i in created_insights
-        ],
-        "connections": [
-            {
-                "id": c.id,
-                "source_id": c.source_id,
-                "related_source_id": c.related_source_id,
-                "description": c.description,
-                "shared_tags": c.shared_tags,
-                "source_title": source.title,
-                "related_title": candidates_by_id[c.related_source_id].title,
-                "related_topic_name": candidates_by_id[c.related_source_id].topic.name,
-                "related_topic_id": candidates_by_id[c.related_source_id].topic_id,
-            }
-            for c in created_connections
         ],
     }

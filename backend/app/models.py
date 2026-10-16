@@ -39,7 +39,6 @@ class Source(Base):
 
     topic = relationship("Topic", back_populates="sources")
     tags = relationship("SourceTag", back_populates="source", cascade="all, delete-orphan")
-    insights = relationship("Insight", back_populates="source", cascade="all, delete-orphan")
 
 
 class Tag(Base):
@@ -62,29 +61,6 @@ class SourceTag(Base):
 
     source = relationship("Source", back_populates="tags")
     tag = relationship("Tag", back_populates="sources")
-
-
-class Insight(Base):
-    __tablename__ = "insights"
-
-    id = Column(String, primary_key=True, default=gen_id)
-    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
-    insight_type = Column(String, nullable=False)  # fact, decision, hypothesis, open_question, action_item
-    content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    source = relationship("Source", back_populates="insights")
-
-
-class Connection(Base):
-    __tablename__ = "connections"
-
-    id = Column(String, primary_key=True, default=gen_id)
-    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
-    related_source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
-    description = Column(Text, nullable=False)
-    shared_tags = Column(String, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Chat(Base):
