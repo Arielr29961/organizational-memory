@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, clearLogin, getStoredUser, getToken, saveLogin } from "./api";
+import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import TopicView from "./components/TopicView";
 import AddTopicModal from "./components/AddTopicModal";
 
-export default function App() {
+function Workspace({ user, onLogout }) {
   const [topics, setTopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [focusSource, setFocusSource] = useState(null);
@@ -59,6 +60,8 @@ export default function App() {
         onAddTopic={() => setShowAddTopic(true)}
         loading={loading}
         error={error}
+        user={user}
+        onLogout={onLogout}
       />
       <main className="main-area">
         {selectedTopicId ? (
@@ -85,4 +88,48 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const [user, setUser] = useState(() => (getToken() ? getStoredUser() : null));
+  const [checking, setChecking] = useState(() => Boolean(getToken()));
+
+  // Validate a stored login once on load; an expired one falls back to the login screen
+  useEffect(() => {
+    if (!getToken()) return;
+    api
+      .me()
+      .then((u) => setUser(u))
+      .catch(() => {
+        clearLogin();
+        setUser(null);
+      })
+      .finally(() => setChecking(false));
+  }, []);
+
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener("auth-expired", onExpired);
+    return () => window.removeEventListener("auth-expired", onExpired);
+  }, []);
+
+  function handleLogin(result) {
+    saveLogin(result);
+    setUser(result.user);
+  }
+
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      // the token is dropped locally either way
+    }
+    clearLogin();
+    setUser(null);
+  }
+
+  if (checking) return <div className="muted" style={{ padding: 24 }}>טוען...</div>;
+  if (!user) return <Login onLogin={handleLogin} />;
+  // key: a different user gets a fresh workspace, never the previous user's state
+  return <Workspace key={user.id} user={user} onLogout={handleLogout} />;
 }

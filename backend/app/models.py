@@ -18,6 +18,7 @@ class Topic(Base):
     name = Column(String, nullable=False)
     description = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+    owner_id = Column(String, ForeignKey("people.id"), nullable=True)
 
     sources = relationship("Source", back_populates="topic", cascade="all, delete-orphan")
     chats = relationship("Chat", back_populates="topic", cascade="all, delete-orphan")
@@ -50,6 +51,7 @@ class Person(Base):
     id = Column(String, primary_key=True, default=gen_id)
     email = Column(String, nullable=False, unique=True)  # stored lower-case
     name = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)  # set when the person registers; people without one are only in the address book
 
     sources = relationship("SourceParticipant", back_populates="person", cascade="all, delete-orphan")
 
@@ -66,6 +68,19 @@ class SourceParticipant(Base):
 
     source = relationship("Source", back_populates="participants")
     person = relationship("Person", back_populates="sources")
+
+
+class AuthSession(Base):
+    """A login: only the hash of the token is stored."""
+
+    __tablename__ = "auth_sessions"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    token_hash = Column(String, nullable=False, unique=True)
+    person_id = Column(String, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    person = relationship("Person")
 
 
 class Tag(Base):

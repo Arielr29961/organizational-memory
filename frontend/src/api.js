@@ -1,6 +1,60 @@
 const BASE_URL = "http://localhost:8000";
 
+// The login lives in sessionStorage: every browser tab is its own session, so two different users can be tried side
+// by side in two tabs. Closing the tab logs out.
+const TOKEN_KEY = "om_token";
+const USER_KEY = "om_user";
+
+function readStore(key) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStore(key, value) {
+  try {
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch {
+    // storage blocked: the login just won't survive a reload
+  }
+}
+
+export function getToken() {
+  return readStore(TOKEN_KEY);
+}
+
+export function getStoredUser() {
+  try {
+    return JSON.parse(readStore(USER_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+export function saveLogin({ token, user }) {
+  writeStore(TOKEN_KEY, token);
+  writeStore(USER_KEY, JSON.stringify(user));
+}
+
+export function clearLogin() {
+  writeStore(TOKEN_KEY, null);
+  writeStore(USER_KEY, null);
+}
+
+function apiFetch(url, options = {}) {
+  const token = getToken();
+  const headers = token ? { ...(options.headers || {}), Authorization: `Bearer ${token}` } : options.headers;
+  return fetch(url, { ...options, headers });
+}
+
 async function handle(res) {
+  if (res.status === 401 && getToken()) {
+    clearLogin();
+    window.dispatchEvent(new Event("auth-expired"));
+  }
   if (!res.ok) {
     let message = `שגיאה בבקשה (${res.status})`;
     try {
@@ -16,108 +70,124 @@ async function handle(res) {
 }
 
 export const api = {
+  // auth
+  register: (email, name, password) =>
+    apiFetch(`${BASE_URL}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name, password }),
+    }).then(handle),
+  login: (email, password) =>
+    apiFetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }).then(handle),
+  logout: () => apiFetch(`${BASE_URL}/api/auth/logout`, { method: "POST" }).then(handle),
+  me: () => apiFetch(`${BASE_URL}/api/auth/me`).then(handle),
+
   // topics
-  listTopics: (q) => fetch(`${BASE_URL}/api/topics${q ? `?q=${encodeURIComponent(q)}` : ""}`).then(handle),
-  getTopic: (id) => fetch(`${BASE_URL}/api/topics/${id}`).then(handle),
+  listTopics: (q) => apiFetch(`${BASE_URL}/api/topics${q ? `?q=${encodeURIComponent(q)}` : ""}`).then(handle),
+  getTopic: (id) => apiFetch(`${BASE_URL}/api/topics/${id}`).then(handle),
   createTopic: (data) =>
-    fetch(`${BASE_URL}/api/topics`, {
+    apiFetch(`${BASE_URL}/api/topics`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(handle),
   updateTopic: (id, data) =>
-    fetch(`${BASE_URL}/api/topics/${id}`, {
+    apiFetch(`${BASE_URL}/api/topics/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(handle),
-  deleteTopic: (id) => fetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
+  deleteTopic: (id) => apiFetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
   askAi: (id, question, chatId = null, file = null) => {
     const fd = new FormData();
     fd.append("question", question);
     if (chatId) fd.append("chat_id", chatId);
     if (file) fd.append("file", file);
-    return fetch(`${BASE_URL}/api/topics/${id}/ask`, { method: "POST", body: fd }).then(handle);
+    return apiFetch(`${BASE_URL}/api/topics/${id}/ask`, { method: "POST", body: fd }).then(handle);
   },
 
   // chats
-  listChats: (topicId) => fetch(`${BASE_URL}/api/topics/${topicId}/chats`).then(handle),
-  getChat: (chatId) => fetch(`${BASE_URL}/api/chats/${chatId}`).then(handle),
+  listChats: (topicId) => apiFetch(`${BASE_URL}/api/topics/${topicId}/chats`).then(handle),
+  getChat: (chatId) => apiFetch(`${BASE_URL}/api/chats/${chatId}`).then(handle),
   renameChat: (chatId, title) =>
-    fetch(`${BASE_URL}/api/chats/${chatId}`, {
+    apiFetch(`${BASE_URL}/api/chats/${chatId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     }).then(handle),
-  deleteChat: (chatId) => fetch(`${BASE_URL}/api/chats/${chatId}`, { method: "DELETE" }).then(handle),
+  deleteChat: (chatId) => apiFetch(`${BASE_URL}/api/chats/${chatId}`, { method: "DELETE" }).then(handle),
 
   // sources
-  listSources: (topicId) => fetch(`${BASE_URL}/api/topics/${topicId}/sources`).then(handle),
+  listSources: (topicId) => apiFetch(`${BASE_URL}/api/topics/${topicId}/sources`).then(handle),
   createSource: (topicId, formData) =>
-    fetch(`${BASE_URL}/api/topics/${topicId}/sources`, {
+    apiFetch(`${BASE_URL}/api/topics/${topicId}/sources`, {
       method: "POST",
       body: formData,
     }).then(handle),
-  getSource: (id) => fetch(`${BASE_URL}/api/sources/${id}`).then(handle),
+  getSource: (id) => apiFetch(`${BASE_URL}/api/sources/${id}`).then(handle),
   updateSource: (id, data) =>
-    fetch(`${BASE_URL}/api/sources/${id}`, {
+    apiFetch(`${BASE_URL}/api/sources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(handle),
-  deleteSource: (id) => fetch(`${BASE_URL}/api/sources/${id}`, { method: "DELETE" }).then(handle),
-  analyzeSource: (id) => fetch(`${BASE_URL}/api/sources/${id}/analyze`, { method: "POST" }).then(handle),
+  deleteSource: (id) => apiFetch(`${BASE_URL}/api/sources/${id}`, { method: "DELETE" }).then(handle),
+  analyzeSource: (id) => apiFetch(`${BASE_URL}/api/sources/${id}/analyze`, { method: "POST" }).then(handle),
   addTag: (sourceId, name) =>
-    fetch(`${BASE_URL}/api/sources/${sourceId}/tags`, {
+    apiFetch(`${BASE_URL}/api/sources/${sourceId}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }).then(handle),
   removeTag: (sourceId, tagId) =>
-    fetch(`${BASE_URL}/api/sources/${sourceId}/tags/${tagId}`, { method: "DELETE" }).then(handle),
+    apiFetch(`${BASE_URL}/api/sources/${sourceId}/tags/${tagId}`, { method: "DELETE" }).then(handle),
 
   // people / participants
-  listPeople: () => fetch(`${BASE_URL}/api/people`).then(handle),
+  listPeople: () => apiFetch(`${BASE_URL}/api/people`).then(handle),
   renamePerson: (personId, name) =>
-    fetch(`${BASE_URL}/api/people/${personId}`, {
+    apiFetch(`${BASE_URL}/api/people/${personId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }).then(handle),
   addParticipant: (sourceId, person) =>
-    fetch(`${BASE_URL}/api/sources/${sourceId}/participants`, {
+    apiFetch(`${BASE_URL}/api/sources/${sourceId}/participants`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(person),
     }).then(handle),
   removeParticipant: (sourceId, personId) =>
-    fetch(`${BASE_URL}/api/sources/${sourceId}/participants/${personId}`, { method: "DELETE" }).then(handle),
+    apiFetch(`${BASE_URL}/api/sources/${sourceId}/participants/${personId}`, { method: "DELETE" }).then(handle),
 
   // tags
-  listTags: () => fetch(`${BASE_URL}/api/tags`).then(handle),
-  similarTags: (name) => fetch(`${BASE_URL}/api/tags/similar?name=${encodeURIComponent(name)}`).then(handle),
-  tagCleanup: () => fetch(`${BASE_URL}/api/tags/cleanup`).then(handle),
+  listTags: () => apiFetch(`${BASE_URL}/api/tags`).then(handle),
+  similarTags: (name) => apiFetch(`${BASE_URL}/api/tags/similar?name=${encodeURIComponent(name)}`).then(handle),
+  tagCleanup: () => apiFetch(`${BASE_URL}/api/tags/cleanup`).then(handle),
   mergeTag: (tagId, intoId) =>
-    fetch(`${BASE_URL}/api/tags/${tagId}/merge`, {
+    apiFetch(`${BASE_URL}/api/tags/${tagId}/merge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ into_id: intoId }),
     }).then(handle),
-  suggestTagSynonyms: () => fetch(`${BASE_URL}/api/tags/synonyms`, { method: "POST" }).then(handle),
+  suggestTagSynonyms: () => apiFetch(`${BASE_URL}/api/tags/synonyms`, { method: "POST" }).then(handle),
   mergeTagGroup: (keepId, mergeIds) =>
-    fetch(`${BASE_URL}/api/tags/merge-group`, {
+    apiFetch(`${BASE_URL}/api/tags/merge-group`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
     }).then(handle),
   deleteUnusedTags: (tagIds) =>
-    fetch(`${BASE_URL}/api/tags/delete-unused`, {
+    apiFetch(`${BASE_URL}/api/tags/delete-unused`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag_ids: tagIds }),
     }).then(handle),
-  splitTag: (tagId) => fetch(`${BASE_URL}/api/tags/${tagId}/split`, { method: "POST" }).then(handle),
-  sourcesByTag: (name) => fetch(`${BASE_URL}/api/tags/${encodeURIComponent(name)}/sources`).then(handle),
+  splitTag: (tagId) => apiFetch(`${BASE_URL}/api/tags/${tagId}/split`, { method: "POST" }).then(handle),
+  sourcesByTag: (name) => apiFetch(`${BASE_URL}/api/tags/${encodeURIComponent(name)}/sources`).then(handle),
 };
 
 export const SOURCE_TYPES = [
