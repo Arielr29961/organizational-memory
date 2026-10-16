@@ -138,6 +138,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(handle),
+  listVersions: (id) => apiFetch(`${BASE_URL}/api/sources/${id}/versions`).then(handle),
+  getVersion: (id, versionId) => apiFetch(`${BASE_URL}/api/sources/${id}/versions/${versionId}`).then(handle),
+  restoreVersion: (id, versionId) => apiFetch(`${BASE_URL}/api/sources/${id}/versions/${versionId}/restore`, { method: "POST" }).then(handle),
   deleteSource: (id) => apiFetch(`${BASE_URL}/api/sources/${id}`, { method: "DELETE" }).then(handle),
   analyzeSource: (id) => apiFetch(`${BASE_URL}/api/sources/${id}/analyze`, { method: "POST" }).then(handle),
   addTag: (sourceId, name) =>
@@ -251,3 +254,37 @@ export const SOURCE_TYPES = [
 ];
 
 export const SOURCE_TYPE_LABELS = Object.fromEntries(SOURCE_TYPES.map((t) => [t.value, t.label]));
+
+// "05/11/2026, 14:32" in the viewer's own time zone; the server sends UTC with a trailing Z
+export function formatMoment(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
+}
+
+// Files the browser can show itself (the server only serves these inline too); everything else is a download
+const INLINE_EXTENSIONS = [".pdf", ".txt", ".md", ".csv"];
+export const canOpenInBrowser = (fileName) => INLINE_EXTENSIONS.some((ext) => (fileName || "").toLowerCase().endsWith(ext));
+
+// The file request needs the login header, so a plain link would not work: fetch it, then open or save the blob.
+export async function openSourceFile(source, { open = false } = {}) {
+  const win = open ? window.open("", "_blank") : null; // opened right away so the popup blocker sees the click
+  try {
+    const res = await apiFetch(`${BASE_URL}/api/sources/${source.id}/file${open ? "?inline=true" : ""}`);
+    if (!res.ok) await handle(res);
+    const url = URL.createObjectURL(await res.blob());
+    if (open && win) {
+      win.location.href = url;
+    } else {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = source.file_name || "file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  } catch (err) {
+    win?.close();
+    throw err;
+  }
+}

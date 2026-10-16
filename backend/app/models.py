@@ -54,8 +54,12 @@ class Source(Base):
     file_name = Column(String, nullable=True)
     file_path = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    edited_at = Column(DateTime, nullable=True)  # last time title/type/date/description/content was changed
+    edited_by = Column(String, ForeignKey("people.id"), nullable=True)
 
     topic = relationship("Topic", back_populates="sources")
+    editor = relationship("Person", foreign_keys=[edited_by])
+    versions = relationship("SourceVersion", back_populates="source", cascade="all, delete-orphan", order_by="SourceVersion.replaced_at")
     tags = relationship("SourceTag", back_populates="source", cascade="all, delete-orphan")
     participants = relationship("SourceParticipant", back_populates="source", cascade="all, delete-orphan")
 
@@ -98,6 +102,25 @@ class AuthSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     person = relationship("Person")
+
+
+class SourceVersion(Base):
+    """The text state of a source just before an edit replaced it (tags, participants and files are not versioned)."""
+
+    __tablename__ = "source_versions"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    replaced_at = Column(DateTime, default=datetime.utcnow)  # when the edit that replaced this version happened
+    replaced_by = Column(String, ForeignKey("people.id"), nullable=True)  # who made that edit
+    title = Column(String, nullable=False)
+    source_type = Column(String, nullable=False)
+    date = Column(Date, nullable=True)
+    description = Column(Text, default="")
+    content = Column(Text, default="")
+
+    source = relationship("Source", back_populates="versions")
+    editor = relationship("Person", foreign_keys=[replaced_by])
 
 
 class Tag(Base):

@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { api, SOURCE_TYPE_LABELS } from "../api";
+import { api, canOpenInBrowser, formatMoment, openSourceFile, SOURCE_TYPE_LABELS } from "../api";
+import EditSourceModal from "./EditSourceModal";
+import VersionsModal from "./VersionsModal";
 import ParticipantsInput from "./ParticipantsInput";
 import TagSuggest from "./TagSuggest";
 
@@ -7,6 +9,9 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
   const [expanded, setExpanded] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
+  const [fileError, setFileError] = useState("");
 
   async function handleAddTag(e) {
     e.preventDefault();
@@ -48,6 +53,15 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
     await onMutated();
   }
 
+  async function handleFile(open) {
+    setFileError("");
+    try {
+      await openSourceFile(source, { open });
+    } catch (err) {
+      setFileError(err.message);
+    }
+  }
+
   const preview = source.content && source.content.length > 260 ? source.content.slice(0, 260) + "…" : source.content;
 
   return (
@@ -60,13 +74,45 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
           <span className="type-badge">{SOURCE_TYPE_LABELS[source.source_type] || source.source_type}</span>
           <h4>{source.title}</h4>
           {canEdit && (
+            <button className="btn-icon" onClick={() => setEditing(true)} title="עריכת מקור">
+              ✏️
+            </button>
+          )}
+          {canEdit && (
             <button className="btn-icon" onClick={handleDelete} title="מחיקת מקור">
               🗑
             </button>
           )}
         </div>
+        {source.edited_at && (
+          <div className="edited-note">
+            ✏️ נערך ב-{formatMoment(source.edited_at)}
+            {source.edited_by_name ? ` ע״י ${source.edited_by_name}` : ""}
+            {source.version_count > 0 && (
+              <button type="button" className="link-btn" onClick={() => setShowVersions(true)}>
+                {" "}
+                גרסאות קודמות ({source.version_count})
+              </button>
+            )}
+          </div>
+        )}
         {source.description && <p className="source-description">{source.description}</p>}
-        {source.file_name && <div className="file-chip">📎 {source.file_name}</div>}
+        {source.has_file && (
+          <div className="file-chip">
+            📎 {source.file_name}
+            {canOpenInBrowser(source.file_name) && (
+              <button type="button" className="link-btn" onClick={() => handleFile(true)}>
+                {" "}
+                פתיחה
+              </button>
+            )}
+            <button type="button" className="link-btn" onClick={() => handleFile(false)}>
+              {" "}
+              הורדה
+            </button>
+          </div>
+        )}
+        {fileError && <div className="error-text">{fileError}</div>}
 
         <p className="source-content">
           {expanded ? source.content : preview}
@@ -125,6 +171,27 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
         </div>
         {canEdit && <TagSuggest text={newTag} exclude={source.tags.map((t) => t.name)} onPick={addTagByName} />}
       </div>
+      {editing && (
+        <EditSourceModal
+          source={source}
+          onClose={() => setEditing(false)}
+          onSaved={async () => {
+            setEditing(false);
+            await onMutated();
+          }}
+        />
+      )}
+      {showVersions && (
+        <VersionsModal
+          source={source}
+          canEdit={canEdit}
+          onClose={() => setShowVersions(false)}
+          onRestored={async () => {
+            setShowVersions(false);
+            await onMutated();
+          }}
+        />
+      )}
     </div>
   );
 }

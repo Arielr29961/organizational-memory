@@ -1271,3 +1271,46 @@ select {
 .intake-tags-cell {
   min-width: 160px;
 }
+
+/* ---------- Source edit / versions ---------- */
+
+.edited-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+}
+
+.versions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.version-item {
+  width: 100%;
+  text-align: right;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.version-item-active {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.version-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-content {
+  max-height: 320px;
+}

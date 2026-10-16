@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import re
 import shutil
 import uuid
@@ -7,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -14,8 +16,9 @@ from .. import models, schemas
 from ..config import UPLOAD_DIR
 from ..database import get_db
 from ..deps import get_current_user, get_source_as, get_topic_as
-from ..serializers import source_to_out
-from ..services import access_service, claude_service, file_extraction, people_service, tag_utils
+from ..serializers import source_to_out, utc_iso
+from ..services import access_service, claude_service, file_extraction, people_service, source_service, tag_utils
+from ..services.intake_service import SOURCE_TYPES
 from ..services.tag_service import add_tag_to_source, delete_if_unused
 
 router = APIRouter(tags=["sources"])
@@ -114,12 +117,107 @@ def get_source(source_id: str, db: Session = Depends(get_db), user: models.Perso
 @router.patch("/api/sources/{source_id}", response_model=schemas.SourceOut)
 def update_source(source_id: str, payload: schemas.SourceUpdate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     source = get_source_as(db, user, source_id, "editor")
-    data = payload.model_dump(exclude_unset=True)
-    for key, value in data.items():
-        setattr(source, key, value)
+    changes = _clean_changes(source, payload.model_dump(exclude_unset=True))
+    source_service.apply_edit(db, source, user, changes)
     db.commit()
     db.refresh(source)
     return source_to_out(source)
+
+
+def _clean_changes(source: models.Source, data: dict) -> dict:
+    """Validated edits (400 with a readable message); fields that were not sent stay as they are."""
+    changes = {}
+    if "title" in data:
+        title = (data["title"] or "").strip()
+        if not title:
+            raise HTTPException(400, "יש להזין כותרת")
+        changes["title"] = title[:200]
+    if "source_type" in data:
+        if data["source_type"] not in SOURCE_TYPES:
+            raise HTTPException(400, "סוג מקור לא תקין")
+        changes["source_type"] = data["source_type"]
+    if "date" in data:
+        if data["date"] is None:
+            raise HTTPException(400, "יש להזין תאריך")
+        changes["date"] = data["date"]
+    if "description" in data:
+        changes["description"] = data["description"] or ""
+    if "content" in data:
+        content = data["content"] or ""
+        if not content.strip() and not source.file_name:
+            raise HTTPException(400, "למקור חייב להיות תוכן או קובץ מצורף")
+        changes["content"] = content
+    return changes
+
+
+def _version_out(v: models.SourceVersion, full: bool) -> dict:
+    out = {
+        "id": v.id,
+        "replaced_at": utc_iso(v.replaced_at),
+        "replaced_by_name": v.editor.name if v.editor else None,
+        "title": v.title,
+        "source_type": v.source_type,
+        "date": v.date,
+        "content_length": len(v.content or ""),
+    }
+    if full:
+        out.update({"description": v.description or "", "content": v.content or ""})
+    return out
+
+
+@router.get("/api/sources/{source_id}/versions")
+def list_versions(source_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """Earlier text versions of the source, newest first (each is the state before an edit)."""
+    source = get_source_as(db, user, source_id, "viewer")
+    return [_version_out(v, full=False) for v in reversed(source.versions)]
+
+
+def _own_version(source: models.Source, version_id: str) -> models.SourceVersion:
+    version = next((v for v in source.versions if v.id == version_id), None)
+    if not version:
+        raise HTTPException(404, "הגרסה לא נמצאה")
+    return version
+
+
+@router.get("/api/sources/{source_id}/versions/{version_id}")
+def get_version(source_id: str, version_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    source = get_source_as(db, user, source_id, "viewer")
+    return _version_out(_own_version(source, version_id), full=True)
+
+
+@router.post("/api/sources/{source_id}/versions/{version_id}/restore", response_model=schemas.SourceOut)
+def restore_version(source_id: str, version_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """Restoring is an edit like any other: the current text becomes a version too, so nothing is lost."""
+    source = get_source_as(db, user, source_id, "editor")
+    v = _own_version(source, version_id)
+    source_service.apply_edit(
+        db, source, user,
+        {"title": v.title, "source_type": v.source_type, "date": v.date, "description": v.description or "", "content": v.content or ""},
+    )
+    db.commit()
+    db.refresh(source)
+    return source_to_out(source)
+
+
+# Files the browser can show itself; everything else is always a download
+INLINE_TYPES = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8", ".csv": "text/plain; charset=utf-8"}
+
+
+@router.get("/api/sources/{source_id}/file")
+def source_file(source_id: str, inline: bool = False, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    """The original file of a source, for anyone who can see the topic. inline=true shows PDF/text in the browser."""
+    source = get_source_as(db, user, source_id, "viewer")
+    path = Path(source.file_path) if source.file_path else None
+    if not path or not path.exists():
+        raise HTTPException(404, "אין קובץ מצורף למקור הזה" if not source.file_path else "הקובץ לא נמצא בשרת")
+    if not path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+        raise HTTPException(404, "הקובץ לא נמצא בשרת")  # never serve anything outside the uploads folder
+    name = source.file_name or path.name
+    ext = Path(name).suffix.lower()
+    if inline and ext in INLINE_TYPES:
+        return FileResponse(path, media_type=INLINE_TYPES[ext], filename=name, content_disposition_type="inline", headers={"X-Content-Type-Options": "nosniff"})
+    media = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media, filename=name, content_disposition_type="attachment", headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/api/sources/{source_id}")

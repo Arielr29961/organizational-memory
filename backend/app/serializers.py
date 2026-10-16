@@ -37,6 +37,11 @@ def participants_text(source: models.Source) -> str:
     return f" | משתתפים: {names}"
 
 
+def utc_iso(moment) -> str | None:
+    """Datetimes are stored as naive UTC; the trailing Z lets the browser show them in the viewer's own time zone."""
+    return moment.isoformat() + "Z" if moment else None
+
+
 def source_to_out(source: models.Source) -> dict:
     tags = [
         {"id": st.tag.id, "name": st.tag.name, "origin": st.origin}
@@ -56,7 +61,11 @@ def source_to_out(source: models.Source) -> dict:
         "content": source.content or "",
         "description": source.description or "",
         "file_name": source.file_name,
+        "has_file": bool(source.file_path),
         "created_at": source.created_at,
+        "edited_at": utc_iso(source.edited_at),
+        "edited_by_name": source.editor.name if source.editor else None,
+        "version_count": len(source.versions),
         "tags": tags,
         "participants": participants,
     }

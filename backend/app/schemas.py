@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from datetime import date as date_type  # the field name `date` below would otherwise hide the type inside the class
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -78,7 +79,11 @@ class SourceOut(BaseModel):
     content: str
     description: str
     file_name: Optional[str] = None
+    has_file: bool = False
     created_at: datetime
+    edited_at: Optional[str] = None  # ISO time with Z (UTC); None = never edited
+    edited_by_name: Optional[str] = None
+    version_count: int = 0
     tags: List[TagOut] = []
     participants: List[PersonOut] = []
 
@@ -89,7 +94,7 @@ class SourceOut(BaseModel):
 class SourceUpdate(BaseModel):
     title: Optional[str] = None
     source_type: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     content: Optional[str] = None
     description: Optional[str] = None
 
