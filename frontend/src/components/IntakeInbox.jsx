@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, SOURCE_TYPES } from "../api";
 import ParticipantsInput from "./ParticipantsInput";
+import TagSuggest from "./TagSuggest";
 
 const CONFIDENCE = { high: "גבוה", medium: "בינוני", low: "נמוך" };
 const ACCEPT = ".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.eml,.msg,.pptx";
@@ -48,7 +49,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
   const [dragging, setDragging] = useState(false);
   const [folder, setFolder] = useState(null);
   const [scanning, setScanning] = useState(false);
-  const [newTag, setNewTag] = useState("");
+  const [tagInputs, setTagInputs] = useState({}); // text typed in each row's "+ tag" field
   const fileInput = useRef(null);
 
   const load = useCallback(async () => {
@@ -77,6 +78,17 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
       .catch(() => setTopics([]));
     api.intakeFolder().then(setFolder).catch(() => setFolder(null));
   }, [onCountChange]);
+
+  // New files can appear in the folder at any time (dropped there in Explorer): keep the count current without a reload
+  useEffect(() => {
+    const refresh = () => api.intakeFolder().then(setFolder).catch(() => {});
+    const timer = setInterval(refresh, 3000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
 
   // Files are processed in the background: check again until none is still being read
   const processing = items.some((i) => i.status === "processing");
@@ -206,7 +218,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
   function renderDetails(item, d) {
     return (
       <tr key={`${item.id}-details`} className="intake-details-row">
-        <td colSpan={8}>
+        <td colSpan={9}>
           <div className="intake-details">
             {item.reason && <p className="muted">למה הנושא הזה: {item.reason}</p>}
             {item.notes.map((n) => (
@@ -218,34 +230,6 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
               תיאור
               <textarea rows={2} value={d.description} onChange={(e) => edit(item.id, { description: e.target.value })} />
             </label>
-            <div className="field-block">
-              <span>תגיות</span>
-              <div className="tags-row">
-                {d.tags.map((t) => (
-                  <span key={t} className="tag-chip tag-chip-ai">
-                    #{t}
-                    <button type="button" className="tag-remove" onClick={() => edit(item.id, { tags: d.tags.filter((x) => x !== t) })}>
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <input
-                  type="text"
-                  className="intake-tag-input"
-                  placeholder="+ תגית"
-                  value={expanded === item.id ? newTag : ""}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === ",") {
-                      e.preventDefault();
-                      const t = newTag.trim();
-                      if (t && !d.tags.includes(t)) edit(item.id, { tags: [...d.tags, t] });
-                      setNewTag("");
-                    }
-                  }}
-                />
-              </div>
-            </div>
             <div className="field-block">
               <span>משתתפים / מכותבים</span>
               <ParticipantsInput
@@ -273,7 +257,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
         <tr key={item.id}>
           <td />
           <td>{item.file_name}</td>
-          <td colSpan={5} className="muted">
+          <td colSpan={6} className="muted">
             ⏳ ה-AI קורא את הקובץ...
           </td>
           <td />
@@ -285,7 +269,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
         <tr key={item.id}>
           <td />
           <td>{item.file_name}</td>
-          <td colSpan={5} className="error-text">
+          <td colSpan={6} className="error-text">
             {item.error}
           </td>
           <td className="intake-actions">
@@ -341,6 +325,41 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
             ))}
           </select>
         </td>
+        <td className="intake-tags-cell">
+          <div className="tags-row">
+            {d.tags.map((t) => (
+              <span key={t} className="tag-chip tag-chip-ai">
+                #{t}
+                <button type="button" className="tag-remove" title="הסר תגית" onClick={() => edit(item.id, { tags: d.tags.filter((x) => x !== t) })}>
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              className="intake-tag-input"
+              placeholder="+ תגית"
+              value={tagInputs[item.id] || ""}
+              onChange={(e) => setTagInputs((m) => ({ ...m, [item.id]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  const t = (tagInputs[item.id] || "").trim();
+                  if (t && !d.tags.includes(t)) edit(item.id, { tags: [...d.tags, t] });
+                  setTagInputs((m) => ({ ...m, [item.id]: "" }));
+                }
+              }}
+            />
+          </div>
+          <TagSuggest
+            text={tagInputs[item.id] || ""}
+            exclude={d.tags}
+            onPick={(name) => {
+              edit(item.id, { tags: [...d.tags, name] });
+              setTagInputs((m) => ({ ...m, [item.id]: "" }));
+            }}
+          />
+        </td>
         <td>
           <span className={`confidence confidence-${item.confidence}`}>{CONFIDENCE[item.confidence]}</span>
         </td>
@@ -359,7 +378,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
       itemErrors[item.id] && (
         <tr key={`${item.id}-err`}>
           <td />
-          <td colSpan={7} className="error-text">
+          <td colSpan={8} className="error-text">
             {itemErrors[item.id]}
           </td>
         </tr>
@@ -467,6 +486,7 @@ export default function IntakeInbox({ onCountChange, onSourcesAdded }) {
                   <th>כותרת</th>
                   <th>תאריך</th>
                   <th>סוג</th>
+                  <th>תגיות</th>
                   <th>ביטחון</th>
                   <th />
                 </tr>

@@ -1267,3 +1267,7 @@ select {
   overflow-wrap: anywhere;
   user-select: all;
 }
+
+.intake-tags-cell {
+  min-width: 160px;
+}
