@@ -157,18 +157,30 @@ def ask_question(
     history: Optional[list[dict]] = None,
     attachment_name: Optional[str] = None,
     attachment_text: Optional[str] = None,
+    focus_tag: Optional[str] = None,
 ) -> str:
     attachment_block = (
         f"\nקובץ שהמשתמש צירף להודעה זו ({attachment_name}):\n{attachment_text}\n" if attachment_text else ""
     )
+    if focus_tag:
+        focus_block = (
+            f"המשתמש מתמקד בתגית #{focus_tag}. כל המקורות שלהלן, בנושא זה ובנושאים אחרים, הם רק מקורות שמסומנים בתגית הזו. "
+            "ענה על בסיסם בלבד, והזכר בקצרה שהתשובה מתמקדת בתגית.\n\n"
+        )
+        timeline_title = f"מקורות המידע בנושא זה שמסומנים בתגית #{focus_tag} (מהישן לחדש)"
+        cross_title = f"מקורות מנושאים אחרים שמסומנים באותה תגית (#{focus_tag})"
+    else:
+        focus_block = ""
+        timeline_title = "ציר הזמן המלא של מקורות המידע בנושא זה (מהישן לחדש)"
+        cross_title = "מקורות מנושאים אחרים שנבחרו כרלוונטיים לשאלה"
     user_content = f"""\
 נושא נוכחי: {topic_name}
 תיאור: {topic_description or '-'}
 
-ציר הזמן המלא של מקורות המידע בנושא זה (מהישן לחדש):
+{focus_block}{timeline_title}:
 {timeline_text}
 
-מקורות מנושאים אחרים שנבחרו כרלוונטיים לשאלה:
+{cross_title}:
 {cross_topic_text or '(לא נמצאו מקורות רלוונטיים מנושאים אחרים)'}
 
 {attachment_block}

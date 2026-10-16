@@ -104,11 +104,12 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handle),
   deleteTopic: (id) => apiFetch(`${BASE_URL}/api/topics/${id}`, { method: "DELETE" }).then(handle),
-  askAi: (id, question, chatId = null, file = null) => {
+  askAi: (id, question, chatId = null, file = null, tag = null) => {
     const fd = new FormData();
     fd.append("question", question);
     if (chatId) fd.append("chat_id", chatId);
     if (file) fd.append("file", file);
+    if (tag) fd.append("tag", tag);
     return apiFetch(`${BASE_URL}/api/topics/${id}/ask`, { method: "POST", body: fd }).then(handle);
   },
 

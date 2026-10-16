@@ -8,13 +8,13 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function AddSourceModal({ topicId, onClose, onCreated }) {
+export default function AddSourceModal({ topicId, onClose, onCreated, initialTags = [] }) {
   const [title, setTitle] = useState("");
   const [sourceType, setSourceType] = useState(SOURCE_TYPES[0].value);
   const [date, setDate] = useState(todayStr());
   const [content, setContent] = useState("");
   const [description, setDescription] = useState("");
-  const [tags, setTags] = useState([]);
+  const [tags, setTags] = useState(initialTags); // the tag in focus is pre-selected (removable)
   const [tagInput, setTagInput] = useState("");
   const [participants, setParticipants] = useState([]);
   const [file, setFile] = useState(null);

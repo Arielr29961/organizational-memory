@@ -122,6 +122,7 @@ class ChatMessageOut(BaseModel):
     content: str
     used_sources: List[dict] = []
     attachment_name: Optional[str] = None
+    context_tag: Optional[str] = None
     created_at: datetime
 
 
