@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..serializers import topic_to_out
-from ..services import claude_service, file_extraction, tag_service, tag_utils
+from ..config import MAX_CONTEXT_CHARS
+from ..services import claude_service, file_extraction, source_selection, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -152,40 +153,41 @@ def ask_ai(
             raise HTTPException(404, "השיחה לא נמצאה")
 
     timeline_sources = sorted(topic.sources, key=lambda s: s.date)
+    # Share the context budget between the topic's sources so a big topic cannot overflow the prompt.
+    per_source_chars = max(500, min(3000, MAX_CONTEXT_CHARS // max(1, len(timeline_sources))))
     timeline_lines = []
     for s in timeline_sources:
         tag_names = ", ".join(st.tag.name for st in s.tags)
         timeline_lines.append(
-            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}\n{s.content[:3000]}"
+            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}\n{s.content[:per_source_chars]}"
         )
     timeline_text = "\n\n".join(timeline_lines) or "(אין עדיין מקורות בנושא זה)"
 
-    topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
-    cross_lines = []
     context_sources = {
         s.id: {"id": s.id, "title": s.title, "date": str(s.date), "topic_id": topic.id, "topic_name": topic.name}
         for s in timeline_sources
     }
-    if topic_tag_keys:
-        other_sources = (
-            db.query(models.Source)
-            .filter(models.Source.topic_id != topic_id)
-            .all()
+
+    # Sources of other topics: Claude picks the relevant ones (no shared tag needed); shared tags are the fallback.
+    topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
+    index = source_selection.build_index(db, topic_id, topic_tag_keys)
+    previous_questions = [m.content for m in chat.messages if m.role == "user"][-2:] if chat else []
+    related, _used_ai = source_selection.select_sources(
+        index, topic.name, topic.description, [*previous_questions, question]
+    )
+    cross_lines = []
+    for s in related:
+        cross_lines.append(
+            f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות: {', '.join(st.tag.name for st in s.tags)}\n"
+            f"תקציר: {s.content[:2000]}"
         )
-        for s in other_sources:
-            shared = {st.tag.name for st in s.tags if tag_utils.tag_key(st.tag.name) in topic_tag_keys}
-            if shared:
-                cross_lines.append(
-                    f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות משותפות: {', '.join(shared)}\n"
-                    f"תקציר: {s.content[:800]}"
-                )
-                context_sources[s.id] = {
-                    "id": s.id,
-                    "title": s.title,
-                    "date": str(s.date),
-                    "topic_id": s.topic_id,
-                    "topic_name": s.topic.name,
-                }
+        context_sources[s.id] = {
+            "id": s.id,
+            "title": s.title,
+            "date": str(s.date),
+            "topic_id": s.topic_id,
+            "topic_name": s.topic.name,
+        }
     cross_text = "\n\n".join(cross_lines)
 
     history = _chat_history(chat) if chat else []
