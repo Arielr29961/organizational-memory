@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import models
 from .database import Base, engine, ensure_columns
-from .routers import auth, chats, members, people, sources, tags, topics
-from .services import access_service, auth_service
+from .routers import auth, chats, intake, members, people, sources, tags, topics
+from .services import access_service, auth_service, intake_service
 
 Base.metadata.create_all(bind=engine)
 ensure_columns(
@@ -17,6 +17,7 @@ ensure_columns(
 )
 auth_service.assign_orphan_topics()
 access_service.backfill_chat_authors()
+intake_service.mark_interrupted()
 
 app = FastAPI(title="זיכרון ארגוני - Organizational Memory POC")
 
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(topics.router)
 app.include_router(members.router)
+app.include_router(intake.router)
 app.include_router(sources.router)
 app.include_router(tags.router)
 app.include_router(chats.router)

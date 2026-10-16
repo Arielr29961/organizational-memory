@@ -258,3 +258,65 @@ def select_related_sources(
 """
     raw = _call(SELECT_SOURCES_SYSTEM_PROMPT, user_content, max_tokens=300)
     return _extract_json(raw)
+
+
+INTAKE_SYSTEM_PROMPT = """\
+אתה עוזר AI במערכת "זיכרון ארגוני". המשתמש ייבא קובץ (מסמך, מייל, תמלול, טבלה וכו') והמשימה שלך להכין הצעה למקור מידע חדש:
+לאיזה נושא קיים הוא שייך, ומה פרטי המקור. המשתמש יבדוק ויאשר, ולכן עדיף להיות זהיר וכן לגבי רמת הביטחון.
+החזר JSON בלבד, בפורמט:
+
+{"topic": "t3" או null,
+ "new_topic_name": "שם קצר לנושא חדש" או null,
+ "confidence": "high" | "medium" | "low",
+ "reason": "משפט אחד: למה זה הנושא שנבחר (או למה אף נושא לא מתאים)",
+ "title": "כותרת קצרה וברורה למקור",
+ "date": "YYYY-MM-DD" או null,
+ "source_type": "meeting_transcript" | "meeting_summary" | "email" | "presentation" | "spreadsheet" | "document" | "other",
+ "description": "תיאור של משפט או שניים",
+ "tags": ["תגית"],
+ "participants": [{"name": "שם", "email": "כתובת"}]}
+
+כללים:
+- topic: רק אחד המפתחות מהרשימה שסופקה (t1, t2...), או null. בחר נושא רק כשהתוכן מתאים בבירור לשם, לתיאור או למקורות הקודמים שלו.
+- אם אף נושא לא מתאים: topic = null, והצע ב-new_topic_name שם קצר לנושא חדש. אם גם זה לא ברור, החזר שניהם null.
+- confidence: "high" רק כשההתאמה לנושא חד-משמעית; "medium" כשסביר אך לא בטוח; "low" כשיש ספק או שאין נושא.
+- title: בשפת המסמך, עד 80 תווים. אל תעתיק את שם הקובץ אם יש כותרת טובה יותר בתוכן.
+- date: תאריך הפגישה / המייל / המסמך כפי שמופיע בתוכן. אם אינו מופיע בבירור: null. אל תנחש.
+- source_type: תמלול מילולי של פגישה = meeting_transcript; סיכום או פרוטוקול = meeting_summary; מייל = email; מצגת = presentation; טבלה או נתונים = spreadsheet; מסמך כתוב = document; אחר = other.
+- tags: 0-5 תגיות ספציפיות בעלות היגיון עסקי (פרויקט, לקוח, ספק, צוות, מערכת, סוגיה מוגדרת). לא כלליות ("חוב", "ניהול", "פגישה", שנים). אם תגית קיימת ברשימה מתאימה, השתמש בניסוח המדויק שלה.
+- participants: רק אנשים שכתובת המייל שלהם מופיעה בפועל בטקסט. אל תמציא כתובות ואל תנחש. אם אין, מערך ריק.
+- אל תמציא מידע שלא מופיע בתוכן. החזר אך ורק JSON תקין.
+"""
+
+
+def propose_intake(
+    file_name: str,
+    text: str,
+    topics: list[dict],
+    known_tags: list[str],
+    today: str,
+    mail_headers: Optional[str] = None,
+) -> dict:
+    """topics: [{'key', 'name', 'description', 'recent_titles', 'top_tags'}]. Returns the model's raw JSON proposal."""
+    topic_lines = "\n".join(
+        f"- {t['key']} | {t['name']} | תיאור: {t['description'] or '-'} | מקורות אחרונים: "
+        f"{'; '.join(t['recent_titles']) or '-'} | תגיות נפוצות: {', '.join(t['top_tags']) or '-'}"
+        for t in topics
+    ) or "(אין עדיין נושאים)"
+    user_content = f"""\
+היום: {today}
+שם הקובץ: {file_name}
+{('כותרות המייל (נקראו אוטומטית): ' + mail_headers) if mail_headers else ''}
+
+הנושאים הקיימים של המשתמש:
+{topic_lines}
+
+תגיות קיימות במערכת (לשימוש חוזר בניסוח המדויק, אם מתאימות): {', '.join(known_tags) or '-'}
+
+תוכן הקובץ (תחילתו):
+{text[:12000]}
+
+הכן את ההצעה והחזר JSON.
+"""
+    raw = _call(INTAKE_SYSTEM_PROMPT, user_content, max_tokens=900)
+    return _extract_json(raw)

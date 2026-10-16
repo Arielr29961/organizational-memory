@@ -149,6 +149,33 @@ export const api = {
   removeTag: (sourceId, tagId) =>
     apiFetch(`${BASE_URL}/api/sources/${sourceId}/tags/${tagId}`, { method: "DELETE" }).then(handle),
 
+  // intake (imported files waiting for approval)
+  listIntake: () => apiFetch(`${BASE_URL}/api/intake`).then(handle),
+  uploadIntake: (files) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return apiFetch(`${BASE_URL}/api/intake/upload`, { method: "POST", body: fd }).then(handle);
+  },
+  updateIntake: (id, data) =>
+    apiFetch(`${BASE_URL}/api/intake/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).then(handle),
+  approveIntake: (ids) =>
+    apiFetch(`${BASE_URL}/api/intake/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(handle),
+  rejectIntake: (ids) =>
+    apiFetch(`${BASE_URL}/api/intake/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(handle),
+  retryIntake: (id) => apiFetch(`${BASE_URL}/api/intake/${id}/retry`, { method: "POST" }).then(handle),
+
   // topic sharing
   listMembers: (topicId) => apiFetch(`${BASE_URL}/api/topics/${topicId}/members`).then(handle),
   addMember: (topicId, member) =>

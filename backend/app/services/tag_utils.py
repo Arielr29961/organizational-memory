@@ -83,3 +83,36 @@ def find_duplicate_pairs(candidates: list[dict], threshold: float = 0.8) -> list
                 pairs.append((a, b, round(score, 2)))
     pairs.sort(key=lambda p: p[2], reverse=True)
     return pairs
+
+
+# Safety net behind the prompt rules: AI tags that are too generic to link sources meaningfully.
+GENERIC_TAGS = {
+    "חוב", "חובות", "תיקים", "תיק", "kpi", "נתונים", "מידע", "דוח", "דו\"ח", "דוחות", "ניהול", "בעיה", "בעיות",
+    "שיפור", "ביצועים", "תהליך", "תהליכים", "עדכון", "סיכום", "ניתוח", "תוצאות", "נושא", "משימות", "החלטות",
+    "פגישה", "פגישות", "מייל", "מסמך", "מצגת", "טבלה", "שנה", "חודש", "רבעון", "כללי", "אחר",
+}
+MAX_AI_TAGS = 5
+
+
+def filter_ai_tags(tags: list, topic_name: str = "") -> list[str]:
+    """Drop generic/low-value AI tags, dedupe, and cap the count."""
+    seen = set()
+    kept = []
+    for raw in tags:
+        if not isinstance(raw, str):
+            continue
+        t = raw.strip().lstrip("#").strip()
+        key = t.lower()
+        if (
+            len(t) < 2
+            or len(t) > 40
+            or len(t.split()) > 4
+            or key in seen
+            or key in GENERIC_TAGS
+            or key == topic_name.strip().lower()
+            or re.fullmatch(r"[\d\s./\-_,:]+", t)  # numbers, years, dates
+        ):
+            continue
+        seen.add(key)
+        kept.append(t)
+    return kept[:MAX_AI_TAGS]

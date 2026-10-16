@@ -11,6 +11,9 @@ export default function Sidebar({
   error,
   user,
   onLogout,
+  intakeCount = 0,
+  intakeActive = false,
+  onOpenIntake,
 }) {
   return (
     <aside className="sidebar">
@@ -21,6 +24,10 @@ export default function Sidebar({
 
       <button className="btn btn-primary btn-block" onClick={onAddTopic}>
         + הוספת נושא
+      </button>
+
+      <button className={`btn btn-block intake-nav ${intakeActive ? "intake-nav-active" : ""}`} onClick={onOpenIntake}>
+        📥 תיבת הצעות{intakeCount > 0 && <span className="intake-badge">{intakeCount}</span>}
       </button>
 
       <input
