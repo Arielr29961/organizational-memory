@@ -78,6 +78,12 @@ export const api = {
 
   // people / participants
   listPeople: () => fetch(`${BASE_URL}/api/people`).then(handle),
+  renamePerson: (personId, name) =>
+    fetch(`${BASE_URL}/api/people/${personId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then(handle),
   addParticipant: (sourceId, person) =>
     fetch(`${BASE_URL}/api/sources/${sourceId}/participants`, {
       method: "POST",

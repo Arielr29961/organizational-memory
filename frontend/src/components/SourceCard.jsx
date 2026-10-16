@@ -89,6 +89,10 @@ export default function SourceCard({ source, onMutated, highlighted }) {
               await api.removeParticipant(source.id, p.id);
               await onMutated();
             }}
+            onRename={async (p, name) => {
+              await api.renamePerson(p.id, name);
+              await onMutated();
+            }}
           />
         </details>
 
