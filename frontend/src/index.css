@@ -986,3 +986,11 @@ select {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+.participant-editing input {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  width: 130px;
+}
