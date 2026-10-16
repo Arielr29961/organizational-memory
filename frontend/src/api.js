@@ -266,10 +266,26 @@ const INLINE_EXTENSIONS = [".pdf", ".txt", ".md", ".csv"];
 export const canOpenInBrowser = (fileName) => INLINE_EXTENSIONS.some((ext) => (fileName || "").toLowerCase().endsWith(ext));
 
 // The file request needs the login header, so a plain link would not work: fetch it, then open or save the blob.
-export async function openSourceFile(source, { open = false } = {}) {
+export function openSourceFile(source, options = {}) {
+  return fetchAndOpen(`/api/sources/${source.id}/file`, source.file_name, options);
+}
+
+export function openAttachment(source, attachment, options = {}) {
+  return fetchAndOpen(`/api/sources/${source.id}/attachments/${attachment.id}/file`, attachment.file_name, options);
+}
+
+// "12.4 KB"
+export function formatSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function fetchAndOpen(path, fileName, { open = false } = {}) {
   const win = open ? window.open("", "_blank") : null; // opened right away so the popup blocker sees the click
   try {
-    const res = await apiFetch(`${BASE_URL}/api/sources/${source.id}/file${open ? "?inline=true" : ""}`);
+    const res = await apiFetch(`${BASE_URL}${path}${open ? "?inline=true" : ""}`);
     if (!res.ok) await handle(res);
     const url = URL.createObjectURL(await res.blob());
     if (open && win) {
@@ -277,7 +293,7 @@ export async function openSourceFile(source, { open = false } = {}) {
     } else {
       const link = document.createElement("a");
       link.href = url;
-      link.download = source.file_name || "file";
+      link.download = fileName || "file";
       document.body.appendChild(link);
       link.click();
       link.remove();

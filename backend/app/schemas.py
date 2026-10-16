@@ -69,6 +69,12 @@ class TopicOut(BaseModel):
 
 # ---------- Sources ----------
 
+class AttachmentOut(BaseModel):
+    id: str
+    file_name: str
+    size: int = 0
+
+
 class SourceOut(BaseModel):
     id: str
     topic_id: str
@@ -84,6 +90,7 @@ class SourceOut(BaseModel):
     edited_at: Optional[str] = None  # ISO time with Z (UTC); None = never edited
     edited_by_name: Optional[str] = None
     version_count: int = 0
+    attachments: List[AttachmentOut] = []
     tags: List[TagOut] = []
     participants: List[PersonOut] = []
 

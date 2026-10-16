@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, canOpenInBrowser, formatMoment, openSourceFile, SOURCE_TYPE_LABELS } from "../api";
+import { api, canOpenInBrowser, formatMoment, formatSize, openAttachment, openSourceFile, SOURCE_TYPE_LABELS } from "../api";
 import EditSourceModal from "./EditSourceModal";
 import VersionsModal from "./VersionsModal";
 import ParticipantsInput from "./ParticipantsInput";
@@ -53,10 +53,11 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
     await onMutated();
   }
 
-  async function handleFile(open) {
+  async function handleFile(open, attachment = null) {
     setFileError("");
     try {
-      await openSourceFile(source, { open });
+      if (attachment) await openAttachment(source, attachment, { open });
+      else await openSourceFile(source, { open });
     } catch (err) {
       setFileError(err.message);
     }
@@ -110,6 +111,26 @@ export default function SourceCard({ source, onMutated, highlighted, canEdit = t
               {" "}
               הורדה
             </button>
+          </div>
+        )}
+        {source.attachments.length > 0 && (
+          <div className="attachments-box">
+            <div className="muted">קבצים מצורפים למייל ({source.attachments.length})</div>
+            {source.attachments.map((a) => (
+              <div key={a.id} className="file-chip">
+                📎 {a.file_name} <span className="muted">{formatSize(a.size)}</span>
+                {canOpenInBrowser(a.file_name) && (
+                  <button type="button" className="link-btn" onClick={() => handleFile(true, a)}>
+                    {" "}
+                    פתיחה
+                  </button>
+                )}
+                <button type="button" className="link-btn" onClick={() => handleFile(false, a)}>
+                  {" "}
+                  הורדה
+                </button>
+              </div>
+            ))}
           </div>
         )}
         {fileError && <div className="error-text">{fileError}</div>}

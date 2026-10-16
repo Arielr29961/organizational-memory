@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date as date_type
 
-from sqlalchemy import Column, String, Text, Date, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Text, Date, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -60,6 +60,7 @@ class Source(Base):
     topic = relationship("Topic", back_populates="sources")
     editor = relationship("Person", foreign_keys=[edited_by])
     versions = relationship("SourceVersion", back_populates="source", cascade="all, delete-orphan", order_by="SourceVersion.replaced_at")
+    attachments = relationship("SourceAttachment", back_populates="source", cascade="all, delete-orphan", order_by="SourceAttachment.created_at")
     tags = relationship("SourceTag", back_populates="source", cascade="all, delete-orphan")
     participants = relationship("SourceParticipant", back_populates="source", cascade="all, delete-orphan")
 
@@ -102,6 +103,21 @@ class AuthSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     person = relationship("Person")
+
+
+class SourceAttachment(Base):
+    """A file that came attached to an imported e-mail; stored for download (its text, if readable, is in the source content)."""
+
+    __tablename__ = "source_attachments"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    size = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    source = relationship("Source", back_populates="attachments")
 
 
 class SourceVersion(Base):
@@ -171,6 +187,22 @@ class IntakeItem(Base):
     error = Column(Text, nullable=True)
     source_id = Column(String, nullable=True)  # the source created on approval
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    attachments = relationship("IntakeAttachment", back_populates="item", cascade="all, delete-orphan")
+
+
+class IntakeAttachment(Base):
+    """An attachment of a proposed e-mail; it becomes a SourceAttachment when the proposal is approved."""
+
+    __tablename__ = "intake_attachments"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    item_id = Column(String, ForeignKey("intake_items.id", ondelete="CASCADE"), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    size = Column(Integer, default=0)
+
+    item = relationship("IntakeItem", back_populates="attachments")
 
 
 class Chat(Base):

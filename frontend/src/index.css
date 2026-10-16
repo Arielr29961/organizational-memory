@@ -1314,3 +1314,16 @@ select {
 .version-content {
   max-height: 320px;
 }
+
+.attachments-box {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intake-attachments {
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: 13px;
+}

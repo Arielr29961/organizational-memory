@@ -51,6 +51,7 @@ def _out(item: models.IntakeItem, db: Session) -> dict:
         "confidence": item.confidence,
         "content_preview": (item.content or "")[:600],
         "content_length": len(item.content or ""),
+        "attachments": [{"file_name": a.file_name, "size": a.size or 0} for a in item.attachments],
         "created_at": item.created_at,
     }
 
