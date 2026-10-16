@@ -157,10 +157,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             <button
               key={tag}
               className={`tag-chip ${tagFilter === tag ? "tag-chip-active" : ""}`}
-              onClick={() => {
-                setActiveTab("timeline");
-                setTagFilter(tagFilter === tag ? null : tag);
-              }}
+              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
             >
               #{tag}
             </button>
@@ -193,7 +190,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             canEdit={canEdit}
           />
         )}
-        {activeTab === "tags" && <TagsPanel topicTags={topic.tags} onChanged={handleSourceMutated} />}
+        {activeTab === "tags" && <TagsPanel topicTags={topic.tags} onChanged={handleSourceMutated} onOpenSource={onOpenSource} />}
         {activeTab === "ask" && (
           <AskAI
             topicId={topicId}
