@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..serializers import topic_to_out
+from ..serializers import participants_text, topic_to_out
 from ..config import MAX_CONTEXT_CHARS
 from ..services import claude_service, file_extraction, source_selection, tag_service, tag_utils
 
@@ -159,7 +159,7 @@ def ask_ai(
     for s in timeline_sources:
         tag_names = ", ".join(st.tag.name for st in s.tags)
         timeline_lines.append(
-            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}\n{s.content[:per_source_chars]}"
+            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}{participants_text(s)}\n{s.content[:per_source_chars]}"
         )
     timeline_text = "\n\n".join(timeline_lines) or "(אין עדיין מקורות בנושא זה)"
 
@@ -178,7 +178,7 @@ def ask_ai(
     cross_lines = []
     for s in related:
         cross_lines.append(
-            f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות: {', '.join(st.tag.name for st in s.tags)}\n"
+            f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות: {', '.join(st.tag.name for st in s.tags)}{participants_text(s)}\n"
             f"תקציר: {s.content[:2000]}"
         )
         context_sources[s.id] = {

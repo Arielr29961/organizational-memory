@@ -947,3 +947,42 @@ select {
   padding: 8px 12px;
   border-radius: var(--radius);
 }
+
+/* ---------- Participants ---------- */
+
+.participants-details {
+  margin-top: 10px;
+}
+
+.participants-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.participants {
+  margin-top: 6px;
+}
+
+.participant-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.participant-add input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-muted);
+}

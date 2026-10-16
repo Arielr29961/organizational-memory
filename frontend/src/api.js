@@ -76,6 +76,17 @@ export const api = {
   removeTag: (sourceId, tagId) =>
     fetch(`${BASE_URL}/api/sources/${sourceId}/tags/${tagId}`, { method: "DELETE" }).then(handle),
 
+  // people / participants
+  listPeople: () => fetch(`${BASE_URL}/api/people`).then(handle),
+  addParticipant: (sourceId, person) =>
+    fetch(`${BASE_URL}/api/sources/${sourceId}/participants`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(person),
+    }).then(handle),
+  removeParticipant: (sourceId, personId) =>
+    fetch(`${BASE_URL}/api/sources/${sourceId}/participants/${personId}`, { method: "DELETE" }).then(handle),
+
   // tags
   listTags: () => fetch(`${BASE_URL}/api/tags`).then(handle),
   similarTags: (name) => fetch(`${BASE_URL}/api/tags/similar?name=${encodeURIComponent(name)}`).then(handle),

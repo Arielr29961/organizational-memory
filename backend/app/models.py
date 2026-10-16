@@ -39,6 +39,33 @@ class Source(Base):
 
     topic = relationship("Topic", back_populates="sources")
     tags = relationship("SourceTag", back_populates="source", cascade="all, delete-orphan")
+    participants = relationship("SourceParticipant", back_populates="source", cascade="all, delete-orphan")
+
+
+class Person(Base):
+    """Internal address book: one real e-mail address and the full name that belongs to it."""
+
+    __tablename__ = "people"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    email = Column(String, nullable=False, unique=True)  # stored lower-case
+    name = Column(String, nullable=False)
+
+    sources = relationship("SourceParticipant", back_populates="person", cascade="all, delete-orphan")
+
+
+class SourceParticipant(Base):
+    """A participant / recipient of a source (meeting attendee, e-mail sender or recipient)."""
+
+    __tablename__ = "source_participants"
+    __table_args__ = (UniqueConstraint("source_id", "person_id", name="uq_source_person"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
+    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    person_id = Column(String, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
+
+    source = relationship("Source", back_populates="participants")
+    person = relationship("Person", back_populates="sources")
 
 
 class Tag(Base):
