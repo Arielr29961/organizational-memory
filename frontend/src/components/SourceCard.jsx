@@ -3,7 +3,7 @@ import { api, SOURCE_TYPE_LABELS } from "../api";
 import ParticipantsInput from "./ParticipantsInput";
 import TagSuggest from "./TagSuggest";
 
-export default function SourceCard({ source, onMutated, highlighted }) {
+export default function SourceCard({ source, onMutated, highlighted, canEdit = true }) {
   const [expanded, setExpanded] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,9 +59,11 @@ export default function SourceCard({ source, onMutated, highlighted }) {
         <div className="source-card-top">
           <span className="type-badge">{SOURCE_TYPE_LABELS[source.source_type] || source.source_type}</span>
           <h4>{source.title}</h4>
-          <button className="btn-icon" onClick={handleDelete} title="מחיקת מקור">
-            🗑
-          </button>
+          {canEdit && (
+            <button className="btn-icon" onClick={handleDelete} title="מחיקת מקור">
+              🗑
+            </button>
+          )}
         </div>
         {source.description && <p className="source-description">{source.description}</p>}
         {source.file_name && <div className="file-chip">📎 {source.file_name}</div>}
@@ -81,6 +83,7 @@ export default function SourceCard({ source, onMutated, highlighted }) {
           </summary>
           <ParticipantsInput
             participants={source.participants}
+            readOnly={!canEdit}
             onAdd={async (p) => {
               await api.addParticipant(source.id, p);
               await onMutated();
@@ -101,22 +104,26 @@ export default function SourceCard({ source, onMutated, highlighted }) {
             <span key={tag.id} className={`tag-chip ${tag.origin === "ai" ? "tag-chip-ai" : ""}`}>
               #{tag.name}
               {tag.origin === "ai" && <span className="ai-mark" title="תגית שהוצעה ע״י AI"> AI</span>}
-              <button className="tag-remove" onClick={() => handleRemoveTag(tag.id)} disabled={busy}>
-                ×
-              </button>
+              {canEdit && (
+                <button className="tag-remove" onClick={() => handleRemoveTag(tag.id)} disabled={busy}>
+                  ×
+                </button>
+              )}
             </span>
           ))}
-          <form onSubmit={handleAddTag} className="inline-tag-form">
-            <input
-              type="text"
-              placeholder="+ תגית"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-              disabled={busy}
-            />
-          </form>
+          {canEdit && (
+            <form onSubmit={handleAddTag} className="inline-tag-form">
+              <input
+                type="text"
+                placeholder="+ תגית"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                disabled={busy}
+              />
+            </form>
+          )}
         </div>
-        <TagSuggest text={newTag} exclude={source.tags.map((t) => t.name)} onPick={addTagByName} />
+        {canEdit && <TagSuggest text={newTag} exclude={source.tags.map((t) => t.name)} onPick={addTagByName} />}
       </div>
     </div>
   );

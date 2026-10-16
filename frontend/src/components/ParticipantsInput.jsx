@@ -8,7 +8,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // onRename(person, newName) is optional: when given, saved people (those with an id) get an edit button; the new
 // name applies everywhere the address is used, because the name lives in the address book.
 // onAdd({ email, name }) and onRemove(person) may be async; a thrown error is shown under the field.
-export default function ParticipantsInput({ participants, onAdd, onRemove, onRename, disabled }) {
+export default function ParticipantsInput({ participants, onAdd, onRemove, onRename, disabled, readOnly = false }) {
   const [people, setPeople] = useState([]);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -148,7 +148,7 @@ export default function ParticipantsInput({ participants, onAdd, onRemove, onRen
             <span key={p.email} className="tag-chip" title={p.email}>
               {p.name}
               <span className="muted"> {p.email}</span>
-              {onRename && p.id && (!p.registered || p.email === getStoredUser()?.email) && (
+              {!readOnly && onRename && p.id && (!p.registered || p.email === getStoredUser()?.email) && (
                 <button
                   type="button"
                   className="tag-remove"
@@ -163,15 +163,18 @@ export default function ParticipantsInput({ participants, onAdd, onRemove, onRen
                   ✏️
                 </button>
               )}
-              <button type="button" className="tag-remove" onClick={() => onRemove(p)} disabled={disabled || busy}>
-                ×
-              </button>
+              {!readOnly && (
+                <button type="button" className="tag-remove" onClick={() => onRemove(p)} disabled={disabled || busy}>
+                  ×
+                </button>
+              )}
             </span>
           ),
         )}
         {participants.length === 0 && <span className="muted">אין משתתפים</span>}
       </div>
 
+      {!readOnly && (
       <div className="participant-add">
         <input
           type="email"
@@ -202,6 +205,7 @@ export default function ParticipantsInput({ participants, onAdd, onRemove, onRen
           + הוסף
         </button>
       </div>
+      )}
 
       {suggestions.length > 0 && (
         <div className="tag-suggest">

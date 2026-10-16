@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import UPLOAD_DIR
 from ..database import get_db
-from ..deps import get_current_user, owned_source, owned_topic
+from ..deps import get_current_user, get_source_as, get_topic_as
 from ..serializers import source_to_out
-from ..services import claude_service, file_extraction, people_service, tag_utils
+from ..services import access_service, claude_service, file_extraction, people_service, tag_utils
 from ..services.tag_service import add_tag_to_source, delete_if_unused
 
 router = APIRouter(tags=["sources"])
@@ -56,7 +56,7 @@ def _filter_ai_tags(tags: list, topic_name: str = "") -> list[str]:
 
 @router.get("/api/topics/{topic_id}/sources", response_model=list[schemas.SourceOut])
 def list_sources(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    topic = owned_topic(db, user, topic_id)
+    topic = get_topic_as(db, user, topic_id, "viewer")
     sources = sorted(topic.sources, key=lambda s: s.date)
     return [source_to_out(s) for s in sources]
 
@@ -74,7 +74,7 @@ async def create_source(
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db), user: models.Person = Depends(get_current_user),
 ):
-    topic = owned_topic(db, user, topic_id)
+    topic = get_topic_as(db, user, topic_id, "editor")
 
     try:
         participant_list = json.loads(participants) if participants else []
@@ -140,13 +140,13 @@ async def create_source(
 
 @router.get("/api/sources/{source_id}", response_model=schemas.SourceOut)
 def get_source(source_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "viewer")
     return source_to_out(source)
 
 
 @router.patch("/api/sources/{source_id}", response_model=schemas.SourceOut)
 def update_source(source_id: str, payload: schemas.SourceUpdate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     data = payload.model_dump(exclude_unset=True)
     for key, value in data.items():
         setattr(source, key, value)
@@ -157,7 +157,7 @@ def update_source(source_id: str, payload: schemas.SourceUpdate, db: Session = D
 
 @router.delete("/api/sources/{source_id}")
 def delete_source(source_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     if source.file_path:
         try:
             Path(source.file_path).unlink(missing_ok=True)
@@ -172,7 +172,7 @@ def delete_source(source_id: str, db: Session = Depends(get_db), user: models.Pe
 
 @router.post("/api/sources/{source_id}/tags", response_model=schemas.SourceOut)
 def add_tag(source_id: str, payload: dict, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "יש להזין שם תגית")
@@ -184,7 +184,7 @@ def add_tag(source_id: str, payload: dict, db: Session = Depends(get_db), user: 
 
 @router.delete("/api/sources/{source_id}/tags/{tag_id}", response_model=schemas.SourceOut)
 def remove_tag(source_id: str, tag_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     link = (
         db.query(models.SourceTag)
         .filter(models.SourceTag.source_id == source_id, models.SourceTag.tag_id == tag_id)
@@ -200,7 +200,7 @@ def remove_tag(source_id: str, tag_id: str, db: Session = Depends(get_db), user:
 
 @router.post("/api/sources/{source_id}/participants", response_model=schemas.SourceOut)
 def add_participant(source_id: str, payload: schemas.PersonIn, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     try:
         people_service.add_participant(db, source, payload.email, payload.name)
     except ValueError as exc:
@@ -213,7 +213,7 @@ def add_participant(source_id: str, payload: schemas.PersonIn, db: Session = Dep
 
 @router.delete("/api/sources/{source_id}/participants/{person_id}", response_model=schemas.SourceOut)
 def remove_participant(source_id: str, person_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     link = (
         db.query(models.SourceParticipant)
         .filter(models.SourceParticipant.source_id == source_id, models.SourceParticipant.person_id == person_id)
@@ -228,7 +228,7 @@ def remove_participant(source_id: str, person_id: str, db: Session = Depends(get
 
 @router.post("/api/sources/{source_id}/analyze", response_model=schemas.AnalyzeResult)
 def analyze_source(source_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    source = owned_source(db, user, source_id)
+    source = get_source_as(db, user, source_id, "editor")
     topic = source.topic
 
     existing_tags = [st.tag.name for st in source.tags]
@@ -240,7 +240,7 @@ def analyze_source(source_id: str, db: Session = Depends(get_db), user: models.P
             .join(models.SourceTag, models.SourceTag.tag_id == models.Tag.id)
             .join(models.Source, models.Source.id == models.SourceTag.source_id)
             .join(models.Topic, models.Topic.id == models.Source.topic_id)
-            .filter(models.Topic.owner_id == user.id)
+            .filter(models.Topic.id.in_(access_service.accessible_topic_ids(db, user)))
             .group_by(models.Tag.id)
             .order_by(func.count(models.SourceTag.source_id).desc())
             .limit(60)

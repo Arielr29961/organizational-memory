@@ -10,21 +10,21 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..deps import get_current_user, owned_topic
+from ..deps import get_current_user, get_topic_as
 from ..serializers import participants_text, topic_to_out
 from ..config import MAX_CONTEXT_CHARS
-from ..services import claude_service, file_extraction, source_selection, tag_service, tag_utils
+from ..services import access_service, claude_service, file_extraction, source_selection, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 
 @router.get("", response_model=list[schemas.TopicOut])
 def list_topics(q: str | None = None, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    query = db.query(models.Topic).filter(models.Topic.owner_id == user.id)
+    query = db.query(models.Topic).filter(models.Topic.id.in_(access_service.accessible_topic_ids(db, user)))
     if q:
         query = query.filter(models.Topic.name.ilike(f"%{q}%"))
     topics = query.order_by(models.Topic.created_at.desc()).all()
-    return [topic_to_out(db, t) for t in topics]
+    return [topic_to_out(db, t, user) for t in topics]
 
 
 @router.post("", response_model=schemas.TopicOut)
@@ -33,30 +33,30 @@ def create_topic(payload: schemas.TopicCreate, db: Session = Depends(get_db), us
     db.add(topic)
     db.commit()
     db.refresh(topic)
-    return topic_to_out(db, topic)
+    return topic_to_out(db, topic, user)
 
 
 @router.get("/{topic_id}", response_model=schemas.TopicOut)
 def get_topic(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    topic = owned_topic(db, user, topic_id)
-    return topic_to_out(db, topic)
+    topic = get_topic_as(db, user, topic_id, "viewer")
+    return topic_to_out(db, topic, user)
 
 
 @router.patch("/{topic_id}", response_model=schemas.TopicOut)
 def update_topic(topic_id: str, payload: schemas.TopicUpdate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    topic = owned_topic(db, user, topic_id)
+    topic = get_topic_as(db, user, topic_id, "owner")
     if payload.name is not None:
         topic.name = payload.name
     if payload.description is not None:
         topic.description = payload.description
     db.commit()
     db.refresh(topic)
-    return topic_to_out(db, topic)
+    return topic_to_out(db, topic, user)
 
 
 @router.delete("/{topic_id}")
 def delete_topic(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    topic = owned_topic(db, user, topic_id)
+    topic = get_topic_as(db, user, topic_id, "owner")
     tag_ids = {st.tag_id for source in topic.sources for st in source.tags}
     db.delete(topic)
     db.commit()
@@ -133,7 +133,7 @@ def ask_ai(
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db), user: models.Person = Depends(get_current_user),
 ):
-    topic = owned_topic(db, user, topic_id)
+    topic = get_topic_as(db, user, topic_id, "viewer")
 
     attachment_name = attachment_text = None
     if file is not None and file.filename:
@@ -142,7 +142,7 @@ def ask_ai(
     chat = None
     if chat_id:
         chat = db.get(models.Chat, chat_id)
-        if not chat or chat.topic_id != topic_id:
+        if not chat or chat.topic_id != topic_id or chat.created_by != user.id:
             raise HTTPException(404, "השיחה לא נמצאה")
 
     timeline_sources = sorted(topic.sources, key=lambda s: s.date)
@@ -163,7 +163,7 @@ def ask_ai(
 
     # Sources of other topics: Claude picks the relevant ones (no shared tag needed); shared tags are the fallback.
     topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
-    index = source_selection.build_index(db, topic_id, topic_tag_keys, user.id)
+    index = source_selection.build_index(db, topic_id, topic_tag_keys, access_service.accessible_topic_ids(db, user))
     previous_questions = [m.content for m in chat.messages if m.role == "user"][-2:] if chat else []
     related, _used_ai = source_selection.select_sources(
         index, topic.name, topic.description, [*previous_questions, question]
@@ -197,7 +197,7 @@ def ask_ai(
     # Save only after a successful answer, so a failed call never leaves an empty chat behind.
     now = datetime.utcnow()
     if not chat:
-        chat = models.Chat(topic_id=topic_id, title=question.strip()[:60] or "שיחה חדשה")
+        chat = models.Chat(topic_id=topic_id, created_by=user.id, title=question.strip()[:60] or "שיחה חדשה")
         db.add(chat)
         db.flush()
     db.add(

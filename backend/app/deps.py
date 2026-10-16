@@ -1,10 +1,10 @@
-"""Request dependencies: who is logged in, and lookups that only succeed for things that belong to them."""
+"""Request dependencies: who is logged in, and lookups that only succeed when the user's role allows it."""
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from . import models
 from .database import get_db
-from .services import auth_service
+from .services import access_service, auth_service
 
 
 def _bearer_token(authorization: str | None) -> str | None:
@@ -27,24 +27,32 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
     return person
 
 
-# Anything that exists but belongs to someone else answers 404, the same as "does not exist".
+# A topic the user has no access to answers 404 (same as "does not exist"); one they can see but may not change
+# answers 403.
 
-def owned_topic(db: Session, user: models.Person, topic_id: str) -> models.Topic:
+def get_topic_as(db: Session, user: models.Person, topic_id: str, minimum: str = "viewer") -> models.Topic:
     topic = db.get(models.Topic, topic_id)
-    if not topic or topic.owner_id != user.id:
+    role = access_service.role_in_topic(db, user, topic) if topic else None
+    if role is None:
         raise HTTPException(404, "הנושא לא נמצא")
+    if not access_service.has_role(role, minimum):
+        raise HTTPException(403, "אין לך הרשאה לבצע פעולה זו בנושא")
     return topic
 
 
-def owned_source(db: Session, user: models.Person, source_id: str) -> models.Source:
+def get_source_as(db: Session, user: models.Person, source_id: str, minimum: str = "viewer") -> models.Source:
     source = db.get(models.Source, source_id)
-    if not source or source.topic.owner_id != user.id:
+    role = access_service.role_in_topic(db, user, source.topic) if source else None
+    if role is None:
         raise HTTPException(404, "המקור לא נמצא")
+    if not access_service.has_role(role, minimum):
+        raise HTTPException(403, "אין לך הרשאה לבצע פעולה זו בנושא")
     return source
 
 
-def owned_chat(db: Session, user: models.Person, chat_id: str) -> models.Chat:
+def get_chat_for(db: Session, user: models.Person, chat_id: str) -> models.Chat:
+    """Chats are personal: only their author, and only while the author still has access to the topic."""
     chat = db.get(models.Chat, chat_id)
-    if not chat or chat.topic.owner_id != user.id:
+    if not chat or chat.created_by != user.id or access_service.role_in_topic(db, user, chat.topic) is None:
         raise HTTPException(404, "השיחה לא נמצאה")
     return chat

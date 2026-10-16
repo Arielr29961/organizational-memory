@@ -17,12 +17,11 @@ MAX_INDEX_SOURCES = 400  # most recent sources of other topics offered to the mo
 MAX_SELECTED = 8
 
 
-def build_index(db: Session, topic_id: str, topic_tag_keys: set[str], owner_id: str) -> list[dict]:
-    """Compact entries for sources of the owner's other topics, newest first. Keys s1, s2... are what the model refers to."""
+def build_index(db: Session, topic_id: str, topic_tag_keys: set[str], topic_ids: set[str]) -> list[dict]:
+    """Compact entries for sources of the user's other accessible topics, newest first. Keys s1, s2... are what the model refers to."""
     others = (
         db.query(models.Source)
-        .join(models.Topic, models.Topic.id == models.Source.topic_id)
-        .filter(models.Source.topic_id != topic_id, models.Topic.owner_id == owner_id)
+        .filter(models.Source.topic_id != topic_id, models.Source.topic_id.in_(topic_ids))
         .order_by(models.Source.date.desc())
         .limit(MAX_INDEX_SOURCES)
         .all()

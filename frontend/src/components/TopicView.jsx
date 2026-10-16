@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, ROLE_LABELS } from "../api";
 import Timeline from "./Timeline";
 import TagsPanel from "./TagsPanel";
 import AskAI from "./AskAI";
 import AddSourceModal from "./AddSourceModal";
+import ShareModal from "./ShareModal";
 
 const TABS = [
   { key: "timeline", label: "ציר זמן ומקורות" },
@@ -18,6 +19,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
   const [sources, setSources] = useState([]);
   const [activeTab, setActiveTab] = useState("timeline");
   const [showAddSource, setShowAddSource] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -92,12 +94,20 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
     return <div className="loading-state">טוען נושא...</div>;
   }
 
+  const isOwner = topic.role === "owner";
+  const canEdit = topic.role === "owner" || topic.role === "editor";
+
   return (
     <div className="topic-view">
       <header className="topic-header">
         <div className="topic-header-top">
           <div>
             <h2>{topic.name}</h2>
+            {!isOwner && (
+              <div className="topic-shared-note">
+                🤝 נושא של {topic.owner_name} · התפקיד שלך: <strong>{ROLE_LABELS[topic.role]}</strong>
+              </div>
+            )}
             {editingDescription ? (
               <div className="description-edit">
                 <textarea
@@ -115,18 +125,29 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
                 </div>
               </div>
             ) : (
-              <p className="topic-description" onClick={() => setEditingDescription(true)} title="לחצו לעריכה">
-                {topic.description || "אין תיאור. לחצו כדי להוסיף."}
+              <p
+                className="topic-description"
+                onClick={() => isOwner && setEditingDescription(true)}
+                title={isOwner ? "לחצו לעריכה" : undefined}
+              >
+                {topic.description || (isOwner ? "אין תיאור. לחצו כדי להוסיף." : "אין תיאור.")}
               </p>
             )}
           </div>
           <div className="topic-header-actions">
-            <button className="btn btn-primary" onClick={() => setShowAddSource(true)}>
-              + הוספת מקור
+            {canEdit && (
+              <button className="btn btn-primary" onClick={() => setShowAddSource(true)}>
+                + הוספת מקור
+              </button>
+            )}
+            <button className="btn" onClick={() => setShowShare(true)}>
+              {isOwner ? "👥 שיתוף" : "👥 חברי הנושא"}
             </button>
-            <button className="btn btn-danger" onClick={handleDeleteTopic}>
-              מחיקת נושא
-            </button>
+            {isOwner && (
+              <button className="btn btn-danger" onClick={handleDeleteTopic}>
+                מחיקת נושא
+              </button>
+            )}
           </div>
         </div>
 
@@ -169,6 +190,7 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
             onFiltersChange={setSearchFilters}
             onMutated={handleSourceMutated}
             highlightId={highlightId}
+            canEdit={canEdit}
           />
         )}
         {activeTab === "tags" && <TagsPanel topicTags={topic.tags} onChanged={handleSourceMutated} />}
@@ -181,6 +203,10 @@ export default function TopicView({ topicId, onTopicChanged, onTopicDeleted, foc
           />
         )}
       </div>
+
+      {showShare && (
+        <ShareModal topic={topic} onClose={() => setShowShare(false)} onLeft={() => onTopicDeleted(topicId)} />
+      )}
 
       {showAddSource && (
         <AddSourceModal topicId={topicId} onClose={() => setShowAddSource(false)} onCreated={handleSourceCreated} />

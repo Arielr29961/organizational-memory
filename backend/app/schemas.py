@@ -58,6 +58,9 @@ class TopicOut(BaseModel):
     created_at: datetime
     source_count: int = 0
     tags: List[str] = []
+    role: str = "owner"  # the current user's role in this topic
+    owner_name: Optional[str] = None
+    owner_email: Optional[str] = None
 
     class Config:
         from_attributes = True

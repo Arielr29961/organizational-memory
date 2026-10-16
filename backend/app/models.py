@@ -22,6 +22,23 @@ class Topic(Base):
 
     sources = relationship("Source", back_populates="topic", cascade="all, delete-orphan")
     chats = relationship("Chat", back_populates="topic", cascade="all, delete-orphan")
+    owner = relationship("Person", foreign_keys=[owner_id])
+    members = relationship("TopicMember", back_populates="topic", cascade="all, delete-orphan")
+
+
+class TopicMember(Base):
+    """A person the topic is shared with (the owner is Topic.owner_id and is not listed here)."""
+
+    __tablename__ = "topic_members"
+    __table_args__ = (UniqueConstraint("topic_id", "person_id", name="uq_topic_member"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
+    topic_id = Column(String, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    person_id = Column(String, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String, nullable=False, default="viewer")  # 'viewer' or 'editor'
+
+    topic = relationship("Topic", back_populates="members")
+    person = relationship("Person")
 
 
 class Source(Base):
@@ -113,6 +130,7 @@ class Chat(Base):
     id = Column(String, primary_key=True, default=gen_id)
     topic_id = Column(String, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
+    created_by = Column(String, ForeignKey("people.id"), nullable=True)  # chats are personal to their author
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

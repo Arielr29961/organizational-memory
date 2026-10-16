@@ -69,6 +69,8 @@ async function handle(res) {
   return res.json();
 }
 
+export const ROLE_LABELS = { owner: "בעלים", editor: "עורך", viewer: "צופה" };
+
 export const api = {
   // auth
   register: (email, name, password) =>
@@ -145,6 +147,23 @@ export const api = {
     }).then(handle),
   removeTag: (sourceId, tagId) =>
     apiFetch(`${BASE_URL}/api/sources/${sourceId}/tags/${tagId}`, { method: "DELETE" }).then(handle),
+
+  // topic sharing
+  listMembers: (topicId) => apiFetch(`${BASE_URL}/api/topics/${topicId}/members`).then(handle),
+  addMember: (topicId, member) =>
+    apiFetch(`${BASE_URL}/api/topics/${topicId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(member),
+    }).then(handle),
+  updateMember: (topicId, personId, role) =>
+    apiFetch(`${BASE_URL}/api/topics/${topicId}/members/${personId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }).then(handle),
+  removeMember: (topicId, personId) =>
+    apiFetch(`${BASE_URL}/api/topics/${topicId}/members/${personId}`, { method: "DELETE" }).then(handle),
 
   // people / participants
   listPeople: () => apiFetch(`${BASE_URL}/api/people`).then(handle),
