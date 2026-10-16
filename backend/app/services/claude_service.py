@@ -166,7 +166,7 @@ def ask_question(
 ציר הזמן המלא של מקורות המידע בנושא זה (מהישן לחדש):
 {timeline_text}
 
-מקורות רלוונטיים אפשריים מנושאים אחרים (על בסיס תגיות משותפות):
+מקורות מנושאים אחרים שנבחרו כרלוונטיים לשאלה:
 {cross_topic_text or '(לא נמצאו מקורות רלוונטיים מנושאים אחרים)'}
 
 {attachment_block}
@@ -202,4 +202,44 @@ def suggest_tag_groups(tags: list[dict]) -> dict:
         f"- {t['key']} | {t['name']} | {t['count']} מקורות | כותרות: {'; '.join(t['titles']) or '-'}" for t in tags
     )
     raw = _call(TAG_GROUPS_SYSTEM_PROMPT, f"התגיות במערכת:\n{lines}\n\nהצע קבוצות למיזוג.", max_tokens=4000)
+    return _extract_json(raw)
+
+
+SELECT_SOURCES_SYSTEM_PROMPT = """\
+אתה עוזר AI במערכת "זיכרון ארגוני". המשתמש שואל שאלה בהקשר נושא מסוים. קיבלת רשימה קצרה של מקורות מנושאים אחרים.
+בחר מתוכה את המקורות שעשויים לעזור לענות על השאלה: מידע רקע, נתונים קשורים, החלטות קודמות או הקשר עסקי רלוונטי.
+אין צורך בתגית משותפת: החלט לפי המשמעות של השאלה ושל המקור. אם מצוין שמקור חולק תגיות עם הנושא, זה רמז בלבד.
+
+כללים:
+- בחר רק מקורות שרלוונטיים באמת לשאלה (עד 8), מהחשוב ביותר לפחות חשוב. אם אין כאלה - החזר רשימה ריקה.
+- אל תמציא מזהים; השתמש רק במזהים שניתנו.
+- החזר JSON תקין בלבד: {"source_ids": ["s1", "s2"]}
+"""
+
+
+def select_related_sources(
+    topic_name: str, topic_description: Optional[str], questions: list[str], index: list[dict]
+) -> dict:
+    """index: [{'key', 'source', 'tags', 'shared_tags'}]. Returns the model's raw JSON ({'source_ids': [...]})."""
+    lines = "\n".join(
+        f"- {e['key']} | נושא: {e['source'].topic.name} | {e['source'].date} | {e['source'].title} | "
+        f"תגיות: {', '.join(e['tags']) or '-'}"
+        + (f" | חולק תגיות עם הנושא: {', '.join(e['shared_tags'])}" if e["shared_tags"] else "")
+        + f" | תקציר: {(e['source'].content or '')[:200].replace(chr(10), ' ')}"
+        for e in index
+    )
+    asked = "\n".join(f"- {q}" for q in questions)
+    user_content = f"""\
+הנושא הנוכחי: {topic_name}
+תיאור הנושא: {topic_description or '-'}
+
+שאלת המשתמש (והשאלות הקודמות בשיחה, מהישנה לחדשה):
+{asked}
+
+מקורות מנושאים אחרים:
+{lines}
+
+בחר את המקורות הרלוונטיים והחזר JSON.
+"""
+    raw = _call(SELECT_SOURCES_SYSTEM_PROMPT, user_content, max_tokens=300)
     return _extract_json(raw)
