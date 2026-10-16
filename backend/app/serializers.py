@@ -39,7 +39,7 @@ def source_to_out(source: models.Source) -> dict:
         for st in sorted(source.tags, key=lambda t: t.tag.name)
     ]
     participants = [
-        {"id": sp.person.id, "email": sp.person.email, "name": sp.person.name}
+        {"id": sp.person.id, "email": sp.person.email, "name": sp.person.name, "registered": bool(sp.person.password_hash)}
         for sp in sorted(source.participants, key=lambda p: p.person.name)
     ]
     return {

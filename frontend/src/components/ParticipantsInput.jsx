@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, getStoredUser } from "../api";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -148,7 +148,7 @@ export default function ParticipantsInput({ participants, onAdd, onRemove, onRen
             <span key={p.email} className="tag-chip" title={p.email}>
               {p.name}
               <span className="muted"> {p.email}</span>
-              {onRename && p.id && (
+              {onRename && p.id && (!p.registered || p.email === getStoredUser()?.email) && (
                 <button
                   type="button"
                   className="tag-remove"

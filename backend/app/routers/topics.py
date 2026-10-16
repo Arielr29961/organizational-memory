@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..deps import get_current_user, owned_topic
 from ..serializers import participants_text, topic_to_out
 from ..config import MAX_CONTEXT_CHARS
 from ..services import claude_service, file_extraction, source_selection, tag_service, tag_utils
@@ -18,8 +19,8 @@ router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 
 @router.get("", response_model=list[schemas.TopicOut])
-def list_topics(q: str | None = None, db: Session = Depends(get_db)):
-    query = db.query(models.Topic)
+def list_topics(q: str | None = None, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    query = db.query(models.Topic).filter(models.Topic.owner_id == user.id)
     if q:
         query = query.filter(models.Topic.name.ilike(f"%{q}%"))
     topics = query.order_by(models.Topic.created_at.desc()).all()
@@ -27,8 +28,8 @@ def list_topics(q: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.TopicOut)
-def create_topic(payload: schemas.TopicCreate, db: Session = Depends(get_db)):
-    topic = models.Topic(name=payload.name, description=payload.description or "")
+def create_topic(payload: schemas.TopicCreate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    topic = models.Topic(name=payload.name, description=payload.description or "", owner_id=user.id)
     db.add(topic)
     db.commit()
     db.refresh(topic)
@@ -36,18 +37,14 @@ def create_topic(payload: schemas.TopicCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{topic_id}", response_model=schemas.TopicOut)
-def get_topic(topic_id: str, db: Session = Depends(get_db)):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
+def get_topic(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    topic = owned_topic(db, user, topic_id)
     return topic_to_out(db, topic)
 
 
 @router.patch("/{topic_id}", response_model=schemas.TopicOut)
-def update_topic(topic_id: str, payload: schemas.TopicUpdate, db: Session = Depends(get_db)):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
+def update_topic(topic_id: str, payload: schemas.TopicUpdate, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    topic = owned_topic(db, user, topic_id)
     if payload.name is not None:
         topic.name = payload.name
     if payload.description is not None:
@@ -58,10 +55,8 @@ def update_topic(topic_id: str, payload: schemas.TopicUpdate, db: Session = Depe
 
 
 @router.delete("/{topic_id}")
-def delete_topic(topic_id: str, db: Session = Depends(get_db)):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
+def delete_topic(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    topic = owned_topic(db, user, topic_id)
     tag_ids = {st.tag_id for source in topic.sources for st in source.tags}
     db.delete(topic)
     db.commit()
@@ -136,11 +131,9 @@ def ask_ai(
     question: str = Form(...),
     chat_id: Optional[str] = Form(None),  # continue this chat; a new chat is created when omitted
     file: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db), user: models.Person = Depends(get_current_user),
 ):
-    topic = db.get(models.Topic, topic_id)
-    if not topic:
-        raise HTTPException(404, "הנושא לא נמצא")
+    topic = owned_topic(db, user, topic_id)
 
     attachment_name = attachment_text = None
     if file is not None and file.filename:
@@ -170,7 +163,7 @@ def ask_ai(
 
     # Sources of other topics: Claude picks the relevant ones (no shared tag needed); shared tags are the fallback.
     topic_tag_keys = {tag_utils.tag_key(st.tag.name) for s in timeline_sources for st in s.tags}
-    index = source_selection.build_index(db, topic_id, topic_tag_keys)
+    index = source_selection.build_index(db, topic_id, topic_tag_keys, user.id)
     previous_questions = [m.content for m in chat.messages if m.role == "user"][-2:] if chat else []
     related, _used_ai = source_selection.select_sources(
         index, topic.name, topic.description, [*previous_questions, question]

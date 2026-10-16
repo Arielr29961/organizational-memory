@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..deps import get_current_user
 from ..serializers import source_to_out
 from ..services import claude_service, tag_service, tag_utils
 
@@ -24,20 +25,20 @@ class TagGroupMerge(BaseModel):
 
 
 @router.get("", response_model=list[schemas.TagWithCount])
-def list_tags(db: Session = Depends(get_db)):
-    return tag_service.tags_with_counts(db)
+def list_tags(db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    return tag_service.tags_with_counts(db, user.id)
 
 
 @router.get("/similar")
-def similar_tags(name: str, limit: int = 5, db: Session = Depends(get_db)):
+def similar_tags(name: str, limit: int = 5, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Existing tags that look like `name` (typos, spacing/quotes, close wording) - for 'did you mean' hints."""
-    return tag_utils.find_similar(name, tag_service.tags_with_counts(db), limit=limit)
+    return tag_utils.find_similar(name, tag_service.tags_with_counts(db, user.id), limit=limit)
 
 
 @router.get("/cleanup")
-def cleanup_candidates(db: Session = Depends(get_db)):
+def cleanup_candidates(db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Probable duplicate pairs, and tags that are really several tags joined together."""
-    tags = tag_service.tags_with_counts(db)
+    tags = tag_service.tags_with_counts(db, user.id)
     unused = [t for t in tags if t["count"] == 0]
     used = [t for t in tags if t["count"] > 0]
     joined = [t for t in used if tag_utils.has_separator(t["name"])]
@@ -50,15 +51,15 @@ def cleanup_candidates(db: Session = Depends(get_db)):
 
 
 @router.post("/delete-unused")
-def delete_unused(payload: TagIds, db: Session = Depends(get_db)):
+def delete_unused(payload: TagIds, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Delete tags that no source uses. Tags that are in use are skipped."""
     return tag_service.delete_unused_tags(db, payload.tag_ids)
 
 
 @router.post("/synonyms")
-def suggest_synonyms(db: Session = Depends(get_db)):
+def suggest_synonyms(db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Ask Claude which existing tags could be merged. Only suggests: nothing is changed."""
-    tags = tag_service.build_ai_tag_input(db)
+    tags = tag_service.build_ai_tag_input(db, user.id)
     if len(tags) < 2:
         return {"groups": [], "tags_checked": len(tags)}
     try:
@@ -71,9 +72,9 @@ def suggest_synonyms(db: Session = Depends(get_db)):
 
 
 @router.post("/merge-group")
-def merge_group(payload: TagGroupMerge, db: Session = Depends(get_db)):
+def merge_group(payload: TagGroupMerge, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     try:
-        return tag_service.merge_group(db, payload.keep_id, payload.merge_ids)
+        return tag_service.merge_group(db, payload.keep_id, payload.merge_ids, user.id)
     except LookupError as exc:
         raise HTTPException(404, str(exc))
     except ValueError as exc:
@@ -81,9 +82,9 @@ def merge_group(payload: TagGroupMerge, db: Session = Depends(get_db)):
 
 
 @router.post("/{tag_id}/merge")
-def merge_tag(tag_id: str, payload: TagMerge, db: Session = Depends(get_db)):
+def merge_tag(tag_id: str, payload: TagMerge, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     try:
-        return tag_service.merge_tags(db, tag_id, payload.into_id)
+        return tag_service.merge_tags(db, tag_id, payload.into_id, user.id)
     except LookupError as exc:
         raise HTTPException(404, str(exc))
     except ValueError as exc:
@@ -91,9 +92,9 @@ def merge_tag(tag_id: str, payload: TagMerge, db: Session = Depends(get_db)):
 
 
 @router.post("/{tag_id}/split")
-def split_tag(tag_id: str, db: Session = Depends(get_db)):
+def split_tag(tag_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     try:
-        return tag_service.split_tag(db, tag_id)
+        return tag_service.split_tag(db, tag_id, user.id)
     except LookupError as exc:
         raise HTTPException(404, str(exc))
     except ValueError as exc:
@@ -101,10 +102,10 @@ def split_tag(tag_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{tag_name}/sources", response_model=list[schemas.SourceOut])
-def sources_by_tag(tag_name: str, db: Session = Depends(get_db)):
+def sources_by_tag(tag_name: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
     if not tag:
         return []
-    sources = [st.source for st in tag.sources]
+    sources = [link.source for link in tag_service.owned_links(tag, user.id)]
     sources.sort(key=lambda s: s.date, reverse=True)
     return [source_to_out(s) for s in sources]

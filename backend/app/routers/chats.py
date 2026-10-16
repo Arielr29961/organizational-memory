@@ -5,21 +5,14 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..deps import get_current_user, owned_chat, owned_topic
 
 router = APIRouter(tags=["chats"])
 
 
-def _get_chat(db: Session, chat_id: str) -> models.Chat:
-    chat = db.get(models.Chat, chat_id)
-    if not chat:
-        raise HTTPException(404, "השיחה לא נמצאה")
-    return chat
-
-
 @router.get("/api/topics/{topic_id}/chats", response_model=list[schemas.ChatSummary])
-def list_chats(topic_id: str, db: Session = Depends(get_db)):
-    if not db.get(models.Topic, topic_id):
-        raise HTTPException(404, "הנושא לא נמצא")
+def list_chats(topic_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    owned_topic(db, user, topic_id)
     chats = (
         db.query(models.Chat).filter(models.Chat.topic_id == topic_id).order_by(models.Chat.updated_at.desc()).all()
     )
@@ -29,8 +22,8 @@ def list_chats(topic_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/api/chats/{chat_id}", response_model=schemas.ChatDetail)
-def get_chat(chat_id: str, db: Session = Depends(get_db)):
-    chat = _get_chat(db, chat_id)
+def get_chat(chat_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    chat = owned_chat(db, user, chat_id)
     return {
         "id": chat.id,
         "topic_id": chat.topic_id,
@@ -50,8 +43,8 @@ def get_chat(chat_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/api/chats/{chat_id}", response_model=schemas.ChatSummary)
-def rename_chat(chat_id: str, payload: schemas.ChatRename, db: Session = Depends(get_db)):
-    chat = _get_chat(db, chat_id)
+def rename_chat(chat_id: str, payload: schemas.ChatRename, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    chat = owned_chat(db, user, chat_id)
     title = payload.title.strip()
     if not title:
         raise HTTPException(400, "יש להזין שם לשיחה")
@@ -61,8 +54,8 @@ def rename_chat(chat_id: str, payload: schemas.ChatRename, db: Session = Depends
 
 
 @router.delete("/api/chats/{chat_id}")
-def delete_chat(chat_id: str, db: Session = Depends(get_db)):
-    chat = _get_chat(db, chat_id)
+def delete_chat(chat_id: str, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
+    chat = owned_chat(db, user, chat_id)
     db.delete(chat)
     db.commit()
     return {"ok": True}

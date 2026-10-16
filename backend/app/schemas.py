@@ -27,6 +27,7 @@ class PersonOut(BaseModel):
     id: str
     email: str
     name: str
+    registered: bool = False  # has an account (only they can rename themselves)
 
 
 class PersonIn(BaseModel):

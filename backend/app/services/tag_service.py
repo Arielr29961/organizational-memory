@@ -1,4 +1,9 @@
-"""Database operations on tags: normalized get-or-create, listing, merging and splitting."""
+"""Database operations on tags: normalized get-or-create, listing, merging and splitting.
+
+Tag rows are shared by everyone (one row per normalized name), but every user only ever sees and changes the links
+between tags and sources of their own topics: counts, merges, splits and AI suggestions are all scoped by `owner_id`.
+A tag row is deleted only when no source of anybody uses it any more.
+"""
 import re
 
 from sqlalchemy.orm import Session
@@ -45,17 +50,29 @@ def delete_if_unused(db: Session, tag_ids) -> int:
     return deleted
 
 
-def tags_with_counts(db: Session) -> list[dict]:
-    tags = db.query(models.Tag).all()
-    results = [{"id": t.id, "name": t.name, "count": len(t.sources)} for t in tags]
+def owned_links(tag: models.Tag, owner_id: str) -> list[models.SourceTag]:
+    """The links between this tag and sources of the owner's topics."""
+    return [link for link in tag.sources if link.source.topic.owner_id == owner_id]
+
+
+def _visible(tag: models.Tag, owner_id: str) -> bool:
+    """A user sees a tag when one of their sources uses it, or when nobody does (an unused leftover)."""
+    return not tag.sources or bool(owned_links(tag, owner_id))
+
+
+def tags_with_counts(db: Session, owner_id: str) -> list[dict]:
+    results = []
+    for t in db.query(models.Tag).all():
+        if _visible(t, owner_id):
+            results.append({"id": t.id, "name": t.name, "count": len(owned_links(t, owner_id))})
     results.sort(key=lambda t: t["count"], reverse=True)
     return results
 
 
-def _move_links(db: Session, source_tag: models.Tag, target: models.Tag) -> int:
-    """Re-point every source link of source_tag to target (skipping sources that already have target)."""
+def _move_links(db: Session, source_tag: models.Tag, target: models.Tag, owner_id: str) -> int:
+    """Re-point the owner's source links of source_tag to target (skipping sources that already have target)."""
     moved = 0
-    for link in list(source_tag.sources):
+    for link in owned_links(source_tag, owner_id):
         existing = (
             db.query(models.SourceTag)
             .filter(models.SourceTag.source_id == link.source_id, models.SourceTag.tag_id == target.id)
@@ -71,37 +88,40 @@ def _move_links(db: Session, source_tag: models.Tag, target: models.Tag) -> int:
     return moved
 
 
-def merge_tags(db: Session, source_tag_id: str, into_tag_id: str) -> dict:
-    """Merge one tag into another: its sources move over and the old tag disappears."""
+def merge_tags(db: Session, source_tag_id: str, into_tag_id: str, owner_id: str) -> dict:
+    """Merge one tag into another: the owner's sources move over, and the old tag disappears once nobody uses it."""
     source_tag = db.get(models.Tag, source_tag_id)
     target = db.get(models.Tag, into_tag_id)
-    if not source_tag or not target:
+    if not source_tag or not target or not _visible(source_tag, owner_id) or not _visible(target, owner_id):
         raise LookupError("התגית לא נמצאה")
     if source_tag.id == target.id:
         raise ValueError("לא ניתן למזג תגית לעצמה")
-    moved = _move_links(db, source_tag, target)
+    moved = _move_links(db, source_tag, target, owner_id)
     db.flush()
     db.expire(source_tag)
-    db.delete(source_tag)
+    if not source_tag.sources:
+        db.delete(source_tag)
     db.commit()
     return {"merged": source_tag_id, "into": target.id, "sources_moved": moved}
 
 
-def split_tag(db: Session, tag_id: str) -> dict:
-    """Split a joined tag such as 'a, b, c' into separate tags on every source that had it."""
+def split_tag(db: Session, tag_id: str, owner_id: str) -> dict:
+    """Split a joined tag such as 'a, b, c' into separate tags on every source of the owner that had it."""
     tag = db.get(models.Tag, tag_id)
-    if not tag:
+    if not tag or not _visible(tag, owner_id):
         raise LookupError("התגית לא נמצאה")
     names = tag_utils.split_tag_input(tag.name)
     if len(names) < 2:
         raise ValueError("התגית אינה מורכבת מכמה תגיות")
-    if not tag.sources:  # nothing to redistribute: splitting would only create new unused tags
-        db.delete(tag)
-        db.commit()
+    links = owned_links(tag, owner_id)
+    if not links:  # nothing to redistribute: splitting would only create new unused tags
+        if not tag.sources:
+            db.delete(tag)
+            db.commit()
         return {"split": tag_id, "into": []}
     targets = [get_or_create_tag(db, n) for n in names]
     targets = [t for t in targets if t.id != tag.id]
-    for link in list(tag.sources):
+    for link in links:
         for target in targets:
             exists = (
                 db.query(models.SourceTag)
@@ -113,7 +133,8 @@ def split_tag(db: Session, tag_id: str) -> dict:
         db.delete(link)
     db.flush()
     db.expire(tag)
-    db.delete(tag)
+    if not tag.sources:
+        db.delete(tag)
     db.commit()
     return {"split": tag_id, "into": [t.name for t in targets]}
 
@@ -121,15 +142,16 @@ def split_tag(db: Session, tag_id: str) -> dict:
 MAX_TAGS_FOR_AI = 400
 
 
-def build_ai_tag_input(db: Session) -> list[dict]:
-    """Tags worth sending to the model: in use, not joined, not plain numbers; most used first, with 2 example titles."""
+def build_ai_tag_input(db: Session, owner_id: str) -> list[dict]:
+    """Tags worth sending to the model: used by the owner, not joined, not plain numbers; most used first, with 2 example titles."""
     tags = []
     for tag in db.query(models.Tag).all():
+        links = owned_links(tag, owner_id)
         key = tag_utils.tag_key(tag.name)
-        if not tag.sources or tag_utils.has_separator(tag.name) or key.isdigit():
+        if not links or tag_utils.has_separator(tag.name) or key.isdigit():
             continue
-        links = sorted(tag.sources, key=lambda link: link.source.date, reverse=True)
-        tags.append({"name": tag.name, "count": len(tag.sources), "titles": [link.source.title for link in links[:2]], "id": tag.id})
+        links.sort(key=lambda link: link.source.date, reverse=True)
+        tags.append({"name": tag.name, "count": len(links), "titles": [link.source.title for link in links[:2]], "id": tag.id})
     tags.sort(key=lambda t: t["count"], reverse=True)
     tags = tags[:MAX_TAGS_FOR_AI]
     for i, tag in enumerate(tags, start=1):
@@ -170,7 +192,7 @@ def validate_tag_groups(raw: dict, tags: list[dict]) -> list[dict]:
     return result
 
 
-def merge_group(db: Session, keep_id: str, merge_ids: list[str]) -> dict:
+def merge_group(db: Session, keep_id: str, merge_ids: list[str], owner_id: str) -> dict:
     """Merge several tags into the one to keep (each merge commits on its own)."""
     if keep_id in merge_ids:
         raise ValueError("התגית שנשארת לא יכולה להיות גם בין התגיות שימוזגו")
@@ -178,7 +200,7 @@ def merge_group(db: Session, keep_id: str, merge_ids: list[str]) -> dict:
         raise ValueError("לא נבחרו תגיות למיזוג")
     moved = 0
     for tag_id in merge_ids:
-        moved += merge_tags(db, tag_id, keep_id)["sources_moved"]
+        moved += merge_tags(db, tag_id, keep_id, owner_id)["sources_moved"]
     return {"kept": keep_id, "merged": merge_ids, "sources_moved": moved}
 
 

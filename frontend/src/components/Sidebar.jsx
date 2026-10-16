@@ -7,6 +7,8 @@ export default function Sidebar({
   onAddTopic,
   loading,
   error,
+  user,
+  onLogout,
 }) {
   return (
     <aside className="sidebar">
@@ -45,6 +47,16 @@ export default function Sidebar({
           </button>
         ))}
       </div>
+      {user && (
+        <div className="sidebar-user">
+          <div className="sidebar-user-name" title={user.email}>
+            {user.name}
+          </div>
+          <button type="button" className="link-btn" onClick={onLogout}>
+            התנתקות
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

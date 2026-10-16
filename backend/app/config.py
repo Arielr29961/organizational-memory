@@ -13,6 +13,10 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 DATA_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# Topics that existed before accounts were introduced belong to this person (they claim them by registering).
+DEFAULT_OWNER_EMAIL = os.getenv("DEFAULT_OWNER_EMAIL", "ariel29961@gmail.com")
+DEFAULT_OWNER_NAME = os.getenv("DEFAULT_OWNER_NAME", "Ariel Rabinovitch")
+
 DATABASE_URL = f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}"
 
 MAX_CONTEXT_CHARS = 60000
