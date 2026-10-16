@@ -60,11 +60,13 @@ def _visible(tag: models.Tag, owner_id: str) -> bool:
     return not tag.sources or bool(owned_links(tag, owner_id))
 
 
-def tags_with_counts(db: Session, owner_id: str) -> list[dict]:
+def tags_with_counts(db: Session, topic_ids: set[str]) -> list[dict]:
+    """Tags used by sources of these topics (with that count), plus tags nobody uses at all."""
     results = []
     for t in db.query(models.Tag).all():
-        if _visible(t, owner_id):
-            results.append({"id": t.id, "name": t.name, "count": len(owned_links(t, owner_id))})
+        count = sum(1 for link in t.sources if link.source.topic_id in topic_ids)
+        if count or not t.sources:
+            results.append({"id": t.id, "name": t.name, "count": count})
     results.sort(key=lambda t: t["count"], reverse=True)
     return results
 

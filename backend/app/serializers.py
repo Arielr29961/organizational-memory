@@ -1,9 +1,10 @@
 from sqlalchemy.orm import Session
 
 from . import models
+from .services import access_service
 
 
-def topic_to_out(db: Session, topic: models.Topic) -> dict:
+def topic_to_out(db: Session, topic: models.Topic, user: models.Person) -> dict:
     source_ids = [s.id for s in topic.sources]
     tag_names = set()
     if source_ids:
@@ -22,6 +23,9 @@ def topic_to_out(db: Session, topic: models.Topic) -> dict:
         "created_at": topic.created_at,
         "source_count": len(source_ids),
         "tags": sorted(tag_names),
+        "role": access_service.role_in_topic(db, user, topic),
+        "owner_name": topic.owner.name if topic.owner else None,
+        "owner_email": topic.owner.email if topic.owner else None,
     }
 
 

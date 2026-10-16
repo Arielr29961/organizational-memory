@@ -1,3 +1,5 @@
+import { ROLE_LABELS } from "../api";
+
 export default function Sidebar({
   topics,
   selectedTopicId,
@@ -44,6 +46,11 @@ export default function Sidebar({
               {topic.source_count} מקורות
               {topic.tags.length > 0 && ` · ${topic.tags.slice(0, 3).join(", ")}`}
             </div>
+            {topic.role !== "owner" && (
+              <div className="topic-item-shared">
+                🤝 משותף ע״י {topic.owner_name} · {ROLE_LABELS[topic.role]}
+              </div>
+            )}
           </button>
         ))}
       </div>

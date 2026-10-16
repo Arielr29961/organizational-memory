@@ -9,7 +9,7 @@ function matchesFilters(source, { query, mode, from, to }) {
   return true;
 }
 
-export default function Timeline({ sources, tagFilter, onClearFilter, onMutated, highlightId, filters, onFiltersChange }) {
+export default function Timeline({ sources, tagFilter, onClearFilter, onMutated, highlightId, filters, onFiltersChange, canEdit = true }) {
   const byTag = tagFilter ? sources.filter((s) => s.tags.some((t) => t.name === tagFilter)) : sources;
   const filtered = byTag.filter((s) => matchesFilters(s, filters));
   const sorted = [...filtered].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -70,7 +70,7 @@ export default function Timeline({ sources, tagFilter, onClearFilter, onMutated,
       )}
       <div className="timeline-list">
         {sorted.map((source) => (
-          <SourceCard key={source.id} source={source} onMutated={onMutated} highlighted={source.id === highlightId} />
+          <SourceCard key={source.id} source={source} onMutated={onMutated} highlighted={source.id === highlightId} canEdit={canEdit} />
         ))}
       </div>
     </div>

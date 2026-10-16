@@ -6,7 +6,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..serializers import source_to_out
-from ..services import claude_service, tag_service, tag_utils
+from ..services import access_service, claude_service, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
@@ -26,19 +26,19 @@ class TagGroupMerge(BaseModel):
 
 @router.get("", response_model=list[schemas.TagWithCount])
 def list_tags(db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
-    return tag_service.tags_with_counts(db, user.id)
+    return tag_service.tags_with_counts(db, access_service.accessible_topic_ids(db, user))
 
 
 @router.get("/similar")
 def similar_tags(name: str, limit: int = 5, db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Existing tags that look like `name` (typos, spacing/quotes, close wording) - for 'did you mean' hints."""
-    return tag_utils.find_similar(name, tag_service.tags_with_counts(db, user.id), limit=limit)
+    return tag_utils.find_similar(name, tag_service.tags_with_counts(db, access_service.accessible_topic_ids(db, user)), limit=limit)
 
 
 @router.get("/cleanup")
 def cleanup_candidates(db: Session = Depends(get_db), user: models.Person = Depends(get_current_user)):
     """Probable duplicate pairs, and tags that are really several tags joined together."""
-    tags = tag_service.tags_with_counts(db, user.id)
+    tags = tag_service.tags_with_counts(db, access_service.owned_topic_ids(db, user))  # cleanup only touches the user's own topics
     unused = [t for t in tags if t["count"] == 0]
     used = [t for t in tags if t["count"] > 0]
     joined = [t for t in used if tag_utils.has_separator(t["name"])]
@@ -106,6 +106,7 @@ def sources_by_tag(tag_name: str, db: Session = Depends(get_db), user: models.Pe
     tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
     if not tag:
         return []
-    sources = [link.source for link in tag_service.owned_links(tag, user.id)]
+    topic_ids = access_service.accessible_topic_ids(db, user)
+    sources = [link.source for link in tag.sources if link.source.topic_id in topic_ids]
     sources.sort(key=lambda s: s.date, reverse=True)
     return [source_to_out(s) for s in sources]
