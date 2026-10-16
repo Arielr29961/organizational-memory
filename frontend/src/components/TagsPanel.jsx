@@ -3,7 +3,7 @@ import { api, SOURCE_TYPE_LABELS } from "../api";
 import Modal from "./Modal";
 import TagSynonyms from "./TagSynonyms";
 
-export default function TagsPanel({ topicTags, onChanged }) {
+export default function TagsPanel({ topicTags, onChanged, onOpenSource }) {
   const [allTags, setAllTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState(null);
   const [tagSources, setTagSources] = useState([]);
@@ -146,7 +146,17 @@ export default function TagsPanel({ topicTags, onChanged }) {
             {tagSources.map((s) => (
               <li key={s.id}>
                 <span className="type-badge">{SOURCE_TYPE_LABELS[s.source_type] || s.source_type}</span>
-                <strong>{s.title}</strong>
+                <button
+                  type="button"
+                  className="source-link"
+                  title="מעבר למקור"
+                  onClick={() => {
+                    setSelectedTag(null);
+                    onOpenSource(s.topic_id, s.id);
+                  }}
+                >
+                  {s.title}
+                </button>
                 <span className="muted"> · {s.date} · נושא: {s.topic_name}</span>
                 <div className="tag-source-preview">{(s.content || "").slice(0, 160)}</div>
               </li>
