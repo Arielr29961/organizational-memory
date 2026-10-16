@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import sys
+import threading
 import time
 import uuid
 from datetime import date as date_type
@@ -315,6 +316,46 @@ def folder_status(user: models.Person) -> dict:
     return {"path": str(folder), "waiting": len(waiting), "ignored": ignored}
 
 
+def _raise_explorer_window(folder_name: str, timeout: float = 5.0) -> bool:
+    """Windows opens the folder window behind the browser when the request comes from a background process. Find the
+    Explorer window (class CabinetWClass) of this folder and bring it to the front. Best effort: returns whether it worked."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+    enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls, 256)
+        if cls.value != "CabinetWClass":
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        title = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title, length + 1)
+        if folder_name.lower() in title.value.lower():
+            found.append(hwnd)
+            return False
+        return True
+
+    deadline = time.time() + timeout
+    while time.time() < deadline and not found:
+        user32.EnumWindows(enum_proc(visit), 0)
+        if not found:
+            time.sleep(0.2)
+    if not found:
+        return False
+    hwnd = found[0]
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE: un-minimize
+    user32.keybd_event(0x12, 0, 0, 0)  # a tap on Alt makes Windows allow SetForegroundWindow from this process
+    user32.keybd_event(0x12, 0, 2, 0)
+    user32.SetForegroundWindow(hwnd)
+    return user32.GetForegroundWindow() == hwnd
+
+
 def open_folder(user: models.Person) -> None:
     """Opens the user's drop folder in the file manager of the machine that runs the backend (a local POC convenience)."""
     import os
@@ -323,6 +364,7 @@ def open_folder(user: models.Person) -> None:
     folder = str(user_folder(user))
     if sys.platform == "win32":
         os.startfile(folder)  # noqa: S606 - a path the app created itself
+        threading.Thread(target=_raise_explorer_window, args=(Path(folder).name,), daemon=True).start()
     elif sys.platform == "darwin":
         subprocess.Popen(["open", folder])
     else:
