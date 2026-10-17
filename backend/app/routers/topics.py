@@ -12,8 +12,8 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user, get_topic_as
 from ..serializers import participants_text, topic_to_out
-from ..config import MAX_CONTEXT_CHARS
-from ..services import access_service, claude_service, file_extraction, source_selection, tag_service, tag_utils
+from ..config import CROSS_CONTEXT_CHARS, CROSS_SOURCE_CHARS, MAX_CONTEXT_CHARS, MAX_SOURCE_CHARS
+from ..services import access_service, claude_service, context_budget, file_extraction, source_selection, tag_service, tag_utils
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -134,13 +134,14 @@ def build_ask_context(db: Session, user: models.Person, topic: models.Topic, que
     timeline_sources = sorted(topic.sources, key=lambda s: s.date)
     if focus_key:
         timeline_sources = [s for s in timeline_sources if any(tag_utils.tag_key(st.tag.name) == focus_key for st in s.tags)]
-    # Share the context budget between the topic's sources so a big topic cannot overflow the prompt.
-    per_source_chars = max(500, min(3000, MAX_CONTEXT_CHARS // max(1, len(timeline_sources))))
+    # Share the context budget between the topic's sources so a big topic cannot overflow the prompt: short sources are
+    # shown in full, and what they leave unused goes to the long ones (transcripts, workbooks).
+    shown = context_budget.allocate_chars([len(s.content or "") for s in timeline_sources], MAX_CONTEXT_CHARS, MAX_SOURCE_CHARS)
     timeline_lines = []
-    for s in timeline_sources:
+    for s, limit in zip(timeline_sources, shown):
         tag_names = ", ".join(st.tag.name for st in s.tags)
         timeline_lines.append(
-            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}{participants_text(s)}\n{s.content[:per_source_chars]}"
+            f"[id: {s.id}] [{s.date}] ({s.source_type}) {s.title} | תגיות: {tag_names}{participants_text(s)}\n{context_budget.clip(s.content or '', limit)}"
         )
     timeline_text = "\n\n".join(timeline_lines) or "(אין עדיין מקורות בנושא זה)"
 
@@ -160,10 +161,11 @@ def build_ask_context(db: Session, user: models.Person, topic: models.Topic, que
             index, topic.name, topic.description, [*previous_questions, question]
         )
     cross_lines = []
-    for s in related:
+    cross_shown = context_budget.allocate_chars([len(s.content or "") for s in related], CROSS_CONTEXT_CHARS, CROSS_SOURCE_CHARS)
+    for s, limit in zip(related, cross_shown):
         cross_lines.append(
             f"[id: {s.id}] [{s.date}] נושא: {s.topic.name} | {s.title} | תגיות: {', '.join(st.tag.name for st in s.tags)}{participants_text(s)}\n"
-            f"תקציר: {s.content[:2000]}"
+            f"תוכן: {context_budget.clip(s.content or '', limit)}"
         )
         context_sources[s.id] = {
             "id": s.id,
