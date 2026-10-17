@@ -22,4 +22,8 @@ DEFAULT_OWNER_NAME = os.getenv("DEFAULT_OWNER_NAME", "Ariel Rabinovitch")
 
 DATABASE_URL = f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}"
 
-MAX_CONTEXT_CHARS = 60000
+# Ask AI: how much of the sources the model reads (see services/context_budget.py)
+MAX_CONTEXT_CHARS = 120000  # all sources of the topic together
+MAX_SOURCE_CHARS = 30000  # one source (a 30-minute transcript is about 27,000)
+CROSS_CONTEXT_CHARS = 30000  # all sources picked from other topics together
+CROSS_SOURCE_CHARS = 8000  # one of those
